@@ -566,7 +566,7 @@ function App() {
               <input
                 value={loginForm.username}
                 onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
-                placeholder="general, Luisa oder Fitzi"
+                placeholder="Benutzernamen eingeben"
               />
             </label>
             <label>
@@ -581,20 +581,6 @@ function App() {
             <button type="submit" className="primary-button">Anmelden</button>
           </form>
           {loginError ? <p className="error-text">{loginError}</p> : null}
-          <div className="credentials-grid">
-            <article>
-              <strong>Mitarbeiter</strong>
-              <span>`general` / `1425`</span>
-            </article>
-            <article>
-              <strong>General Manager</strong>
-              <span>`Luisa` / `2569`</span>
-            </article>
-            <article>
-              <strong>Owner</strong>
-              <span>`Fitzi` / `0032`</span>
-            </article>
-          </div>
         </div>
       </div>
     );
