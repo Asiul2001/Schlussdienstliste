@@ -9,9 +9,9 @@ const socket = io(window.location.origin, {
 });
 
 const ROLE_LABELS = {
-  employee: 'Mitarbeiter',
-  general_manager: 'General Manager',
-  owner: 'Owner',
+  employee: 'Schlussdienstliste',
+  general_manager: 'Schlussdienstliste',
+  owner: 'Schlussdienstliste',
 };
 
 const SHIFT_OPTIONS = [
@@ -619,7 +619,7 @@ function App() {
           <p className="eyebrow">The Dubliner</p>
           <h1>Schlussdienst Checkliste</h1>
           <p className="subtle">
-            Gemeinsamer iPad-Zugang für das Team mit Nachverfolgung für Management und Owner.
+            Gemeinsamer iPad-Zugang für das Team mit Tagesdokumentation und Nachverfolgung.
           </p>
           <form className="stack" onSubmit={handleLogin}>
             <label>
@@ -670,9 +670,9 @@ function App() {
       </header>
 
       <nav className="tabbar">
-        {user.role === 'employee' ? <a href="#/mitarbeiter">Meine Checkliste</a> : null}
-        {user.role === 'general_manager' ? <a href="#/manager">Tagesbetrieb</a> : null}
-        {user.role === 'general_manager' ? <a href="#/vorlagen">Standardaufgaben</a> : null}
+        {user.role === 'employee' ? <a href="#/mitarbeiter">Heute</a> : null}
+        {user.role === 'general_manager' ? <a href="#/manager">Heute</a> : null}
+        {user.role === 'general_manager' ? <a href="#/vorlagen">Aufgabenpool</a> : null}
         {(user.role === 'general_manager' || user.role === 'owner') ? <a href="#/historie">Historie</a> : null}
         {(user.role === 'general_manager' || user.role === 'owner') ? <a href="#/kollegen">Kollegen</a> : null}
         {user.role === 'owner' ? <a href="#/berichte">Berichte</a> : null}
@@ -699,6 +699,9 @@ function App() {
           setUsageForm={setUsageForm}
           saveShiftUsage={saveShiftUsage}
           usageIsRequired={usageIsRequired}
+          dailyTaskForm={dailyTaskForm}
+          setDailyTaskForm={setDailyTaskForm}
+          addTaskToToday={addTaskToToday}
           photoUploadPending={photoUploadPending}
           pendingPhotoTaskId={pendingPhotoTask?.task?._id || ''}
         />
@@ -844,6 +847,9 @@ function EmployeeView({
   setUsageForm,
   saveShiftUsage,
   usageIsRequired,
+  dailyTaskForm,
+  setDailyTaskForm,
+  addTaskToToday,
   photoUploadPending,
   pendingPhotoTaskId,
 }) {
@@ -851,7 +857,7 @@ function EmployeeView({
     return (
       <section className="panel">
         <h2>Für heute ist noch keine Checkliste angelegt.</h2>
-        <p className="subtle">Der General Manager muss zuerst die Tagescheckliste erstellen.</p>
+        <p className="subtle">Sobald die Tagescheckliste angelegt wurde, erscheint sie hier automatisch.</p>
       </section>
     );
   }
@@ -916,6 +922,67 @@ function EmployeeView({
               </div>
             ) : (
               <>
+                <UsagePrompt
+                  usageForm={usageForm}
+                  setUsageForm={setUsageForm}
+                  saveShiftUsage={saveShiftUsage}
+                />
+                <section className="task-section">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Zusätzliche Aufgabe für heute</h3>
+                      <p className="subtle">Einträge hier gelten nur für die heutige Checkliste.</p>
+                    </div>
+                  </div>
+                  <form className="stack" onSubmit={addTaskToToday}>
+                    <label>
+                      Aufgabe
+                      <input
+                        value={dailyTaskForm.title}
+                        onChange={(event) =>
+                          setDailyTaskForm((current) => ({
+                            ...current,
+                            source: 'one_time',
+                            title: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      Bereich
+                      <select
+                        value={dailyTaskForm.section}
+                        onChange={(event) =>
+                          setDailyTaskForm((current) => ({
+                            ...current,
+                            source: 'one_time',
+                            section: event.target.value,
+                          }))
+                        }
+                      >
+                        {SECTION_OPTIONS.map((option) => (
+                          <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className={`roster-chip ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
+                      onClick={() =>
+                        setDailyTaskForm((current) => ({
+                          ...current,
+                          source: 'one_time',
+                          needsPhoto: !current.needsPhoto,
+                        }))
+                      }
+                    >
+                      {dailyTaskForm.needsPhoto ? 'Foto beim Erledigen erforderlich' : 'Kein Foto erforderlich'}
+                    </button>
+                    <button type="submit" className="primary-button">
+                      Für heute hinzufügen
+                    </button>
+                  </form>
+                </section>
                 <label>
                   Ich hake ab als
                   <select
@@ -1117,7 +1184,7 @@ function ManagerView({
             <div className="panel-header">
               <div>
                 <h2>{formatShiftLabel(activeShift.shiftType)} verwalten</h2>
-                <p className="subtle">Der General Manager kann Bereiche, Besetzung und Aufgaben für den Tag steuern.</p>
+                <p className="subtle">Hier steuerst du Bereiche, Besetzung und Aufgaben für den aktuellen Tag.</p>
               </div>
               <span className="pill">{activeShift.date}</span>
             </div>
@@ -1538,9 +1605,9 @@ function OwnerView({ shifts, reports }) {
   return (
     <div className="dashboard-grid">
       <section className="panel">
-        <h2>Owner Übersicht</h2>
+        <h2>Übersicht</h2>
         <p className="subtle">
-          Hier siehst du den Gesamtstatus, ohne die operative Struktur so leicht zu verändern wie der General Manager.
+          Hier siehst du den Gesamtstatus der sichtbaren Checklisten.
         </p>
         <div className="stats-grid">
           <article>

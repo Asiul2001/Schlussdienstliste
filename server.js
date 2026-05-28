@@ -759,7 +759,7 @@ app.post('/api/shifts', authenticate, requireRole(ROLES.GENERAL_MANAGER), async 
   return res.status(201).json(sanitizeShift(shift));
 });
 
-app.post('/api/shifts/:id/tasks', authenticate, requireRole(ROLES.GENERAL_MANAGER), async (req, res) => {
+app.post('/api/shifts/:id/tasks', authenticate, async (req, res) => {
   const shift = await Shift.findById(req.params.id);
   if (!shift) {
     return res.status(404).json({ error: 'Checkliste nicht gefunden' });
@@ -768,6 +768,9 @@ app.post('/api/shifts/:id/tasks', authenticate, requireRole(ROLES.GENERAL_MANAGE
   const { source, templateId, title, section } = req.body;
 
   if (source === 'pool') {
+    if (req.user.role !== ROLES.GENERAL_MANAGER) {
+      return res.status(403).json({ error: 'Nur die Planung darf Aufgaben aus dem Pool hinzufügen.' });
+    }
     if (!templateId) {
       return res.status(400).json({ error: 'Bitte eine Aufgabe aus dem Pool auswählen' });
     }
@@ -797,6 +800,9 @@ app.post('/api/shifts/:id/tasks', authenticate, requireRole(ROLES.GENERAL_MANAGE
       completionHistory: [],
     });
   } else if (source === 'one_time') {
+    if (req.user.role === ROLES.EMPLOYEE && shift.date !== getBerlinDateString()) {
+      return res.status(403).json({ error: 'Zusätzliche Aufgaben können nur für die heutige Checkliste angelegt werden.' });
+    }
     if (!title || !title.trim() || !section || !section.trim()) {
       return res.status(400).json({ error: 'Bitte Titel und Bereich für die einmalige Aufgabe angeben' });
     }
