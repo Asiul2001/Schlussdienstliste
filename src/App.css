@@ -264,6 +264,32 @@ select {
   align-items: center;
 }
 
+.task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.task-proof-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+}
+
+.task-photo-preview {
+  display: block;
+  width: min(220px, 100%);
+  margin-top: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

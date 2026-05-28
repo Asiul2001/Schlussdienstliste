@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import './App.css';
@@ -112,6 +112,15 @@ function toggleScheduleDay(days, day) {
   return days.includes(day) ? days.filter((entry) => entry !== day) : [...days, day].sort((a, b) => a - b);
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Foto konnte nicht gelesen werden.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('checklist-token') || '');
   const [user, setUser] = useState(null);
@@ -137,6 +146,7 @@ function App() {
     shiftType: 'closing',
     templateType: 'standard',
     requiredArea: '',
+    needsPhoto: false,
     scheduleType: 'daily',
     scheduleDays: [],
     recurrenceIntervalWeeks: 2,
@@ -146,12 +156,16 @@ function App() {
     templateId: '',
     title: '',
     section: '',
+    needsPhoto: false,
   });
   const [assignmentForm, setAssignmentForm] = useState({
     date: getTodayBerlin(),
     shiftType: 'closing',
   });
   const [message, setMessage] = useState('');
+  const [pendingPhotoTask, setPendingPhotoTask] = useState(null);
+  const [photoUploadPending, setPhotoUploadPending] = useState(false);
+  const photoInputRef = useRef(null);
 
   const canManageOperations = user?.role === 'general_manager';
   const canManageColleagues = user?.role === 'general_manager' || user?.role === 'owner';
@@ -381,6 +395,7 @@ function App() {
       shiftType: templateForm.shiftType,
       templateType: templateForm.templateType,
       requiredArea: templateForm.requiredArea,
+      needsPhoto: templateForm.needsPhoto,
       scheduleType,
       scheduleDays,
       recurrenceIntervalWeeks: templateForm.recurrenceIntervalWeeks,
@@ -409,6 +424,7 @@ function App() {
           shiftType: 'closing',
           templateType: 'standard',
           requiredArea: '',
+          needsPhoto: false,
           scheduleType: 'daily',
           scheduleDays: [],
           recurrenceIntervalWeeks: 2,
@@ -456,6 +472,7 @@ function App() {
             source: 'one_time',
           title: dailyTaskForm.title,
           section: dailyTaskForm.section || 'Kein Bereich',
+          needsPhoto: dailyTaskForm.needsPhoto,
         };
 
     try {
@@ -471,6 +488,7 @@ function App() {
         templateId: '',
         title: '',
         section: '',
+        needsPhoto: false,
       });
     } catch (error) {
       setMessage(error.response?.data?.error || 'Tagesaufgabe konnte nicht hinzugefügt werden.');
@@ -531,20 +549,63 @@ function App() {
     }
   }
 
-  async function toggleTask(shiftId, taskId, completed) {
+  async function persistTaskToggle(shiftId, task, completed, photoDataUrl = '') {
     try {
       const { data } = await axios.put(
-        `${API_BASE}/shifts/${shiftId}/tasks/${taskId}`,
+        `${API_BASE}/shifts/${shiftId}/tasks/${task._id}`,
         {
           completed,
           colleagueName: activeColleagueName,
+          photoDataUrl,
         },
         authHeaders(token)
       );
       setShifts((current) => current.map((shift) => (shift._id === data._id ? data : shift)));
     } catch (error) {
       setMessage(error.response?.data?.error || 'Aufgabe konnte nicht aktualisiert werden.');
+      throw error;
     }
+  }
+
+  function requestPhotoForTask(shiftId, task) {
+    setPendingPhotoTask({ shiftId, task });
+    if (photoInputRef.current) {
+      photoInputRef.current.value = '';
+      photoInputRef.current.click();
+    }
+  }
+
+  async function handlePhotoSelection(event) {
+    const file = event.target.files?.[0];
+    if (!pendingPhotoTask) {
+      return;
+    }
+    if (!file) {
+      setPendingPhotoTask(null);
+      return;
+    }
+
+    setPhotoUploadPending(true);
+    try {
+      const photoDataUrl = await readFileAsDataUrl(file);
+      await persistTaskToggle(pendingPhotoTask.shiftId, pendingPhotoTask.task, true, photoDataUrl);
+      setMessage('Aufgabe mit Foto-Nachweis gespeichert.');
+    } catch (error) {
+      setMessage(error.response?.data?.error || error.message || 'Foto konnte nicht gespeichert werden.');
+    } finally {
+      setPendingPhotoTask(null);
+      setPhotoUploadPending(false);
+      event.target.value = '';
+    }
+  }
+
+  async function toggleTask(shiftId, task, completed) {
+    if (completed && task.needsPhoto) {
+      requestPhotoForTask(shiftId, task);
+      return;
+    }
+
+    await persistTaskToggle(shiftId, task, completed);
   }
 
   if (sessionLoading) {
@@ -638,6 +699,8 @@ function App() {
           setUsageForm={setUsageForm}
           saveShiftUsage={saveShiftUsage}
           usageIsRequired={usageIsRequired}
+          photoUploadPending={photoUploadPending}
+          pendingPhotoTaskId={pendingPhotoTask?.task?._id || ''}
         />
       ) : null}
 
@@ -662,6 +725,8 @@ function App() {
           usageForm={usageForm}
           setUsageForm={setUsageForm}
           saveShiftUsage={saveShiftUsage}
+          photoUploadPending={photoUploadPending}
+          pendingPhotoTaskId={pendingPhotoTask?.task?._id || ''}
         />
       ) : null}
 
@@ -689,6 +754,14 @@ function App() {
 
       {route === '#/berichte' && user.role === 'owner' ? <ReportsView reports={reports} /> : null}
       {route === '#/owner' && user.role === 'owner' ? <OwnerView shifts={shifts} reports={reports} /> : null}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handlePhotoSelection}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }
@@ -771,6 +844,8 @@ function EmployeeView({
   setUsageForm,
   saveShiftUsage,
   usageIsRequired,
+  photoUploadPending,
+  pendingPhotoTaskId,
 }) {
   if (!shifts.length) {
     return (
@@ -860,8 +935,10 @@ function EmployeeView({
                 </p>
                 <ChecklistSections
                   groupedTasks={groupedActiveTasks}
-                  onToggle={(task) => toggleTask(activeShift._id, task._id, !task.completed)}
+                  onToggle={(task) => toggleTask(activeShift._id, task, !task.completed)}
                   disableToggle={!activeColleagueName}
+                  photoUploadPending={photoUploadPending}
+                  pendingPhotoTaskId={pendingPhotoTaskId}
                 />
               </>
             )}
@@ -892,6 +969,8 @@ function ManagerView({
   usageForm,
   setUsageForm,
   saveShiftUsage,
+  photoUploadPending,
+  pendingPhotoTaskId,
 }) {
   const activeRosterIds = activeShift?.assignedColleagues.map((person) => person.colleagueId).filter(Boolean) || [];
 
@@ -993,6 +1072,21 @@ function ManagerView({
                   ))}
                 </select>
               </label>
+              <div className="stack">
+                <label>Foto-Nachweis</label>
+                <button
+                  type="button"
+                  className={`roster-chip ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
+                  onClick={() =>
+                    setDailyTaskForm((current) => ({
+                      ...current,
+                      needsPhoto: !current.needsPhoto,
+                    }))
+                  }
+                >
+                  {dailyTaskForm.needsPhoto ? 'Foto beim Erledigen erforderlich' : 'Kein Foto erforderlich'}
+                </button>
+              </div>
             </>
           )}
 
@@ -1074,8 +1168,10 @@ function ManagerView({
 
             <ChecklistSections
               groupedTasks={groupedActiveTasks}
-              onToggle={(task) => toggleTask(activeShift._id, task._id, !task.completed)}
+              onToggle={(task) => toggleTask(activeShift._id, task, !task.completed)}
               disableToggle={!activeShift.assignedColleagues.length}
+              photoUploadPending={photoUploadPending}
+              pendingPhotoTaskId={pendingPhotoTaskId}
             />
           </>
         ) : (
@@ -1143,6 +1239,16 @@ function TemplateView({ templates, templateForm, setTemplateForm, submitTemplate
               ))}
             </select>
           </label>
+          <div className="stack">
+            <label>Foto-Nachweis</label>
+            <button
+              type="button"
+              className={`roster-chip ${templateForm.needsPhoto ? 'selected' : ''}`}
+              onClick={() => setTemplateForm((current) => ({ ...current, needsPhoto: !current.needsPhoto }))}
+            >
+              {templateForm.needsPhoto ? 'Foto beim Erledigen erforderlich' : 'Kein Foto erforderlich'}
+            </button>
+          </div>
             <label>
               Häufigkeit
               <select
@@ -1247,7 +1353,7 @@ function TemplateSection({ section, templates, setTemplateForm, deleteTemplate }
             <article key={template._id} className="template-row">
               <div>
                 <strong>{template.title}</strong>
-                <p>{formatTemplateScheduleHint(template)}{template.templateType === 'occasional' ? ' · Gelegentlich' : ''}</p>
+                <p>{formatTemplateScheduleHint(template)}{template.templateType === 'occasional' ? ' · Gelegentlich' : ''}{template.needsPhoto ? ' · Foto erforderlich' : ''}</p>
               </div>
               <div className="inline-actions">
                 <button
@@ -1261,6 +1367,7 @@ function TemplateSection({ section, templates, setTemplateForm, deleteTemplate }
                       shiftType: template.shiftType,
                       templateType: template.templateType || 'standard',
                       requiredArea: template.requiredArea || '',
+                      needsPhoto: Boolean(template.needsPhoto),
                       scheduleType: template.templateType === 'occasional'
                         ? 'never_direct'
                         : (template.scheduleType || ((template.scheduleDays?.length || template.weekdays?.length) ? 'selected_days' : 'daily')),
@@ -1467,7 +1574,7 @@ function OwnerView({ shifts, reports }) {
   );
 }
 
-function ChecklistSections({ groupedTasks, onToggle, disableToggle }) {
+function ChecklistSections({ groupedTasks, onToggle, disableToggle, photoUploadPending, pendingPhotoTaskId }) {
   const sections = Object.entries(groupedTasks);
 
   if (!sections.length) {
@@ -1488,13 +1595,24 @@ function ChecklistSections({ groupedTasks, onToggle, disableToggle }) {
                 key={task._id}
                 className={`task-row ${task.completed ? 'completed' : ''}`}
                 onClick={() => onToggle(task)}
-                disabled={disableToggle}
+                disabled={disableToggle || (photoUploadPending && pendingPhotoTaskId === task._id)}
               >
                 <div>
                   <strong>{task.title}</strong>
-                  <p>{task.completed ? `Erledigt von ${task.completedByColleague || task.completedByUser}` : 'Antippen zum Abhaken'}</p>
+                  <p>{task.completed ? `Erledigt von ${task.completedByColleague || task.completedByUser}` : (task.needsPhoto ? 'Antippen zum Abhaken und Foto aufnehmen' : 'Antippen zum Abhaken')}</p>
+                  <div className="task-meta">
+                    {task.needsPhoto ? <span className="task-proof-badge">Foto erforderlich</span> : null}
+                    {task.completionPhotoDataUrl ? <span className="task-proof-badge">Foto gespeichert</span> : null}
+                  </div>
+                  {task.completionPhotoDataUrl ? (
+                    <img
+                      className="task-photo-preview"
+                      src={task.completionPhotoDataUrl}
+                      alt={`Nachweis für ${task.title}`}
+                    />
+                  ) : null}
                 </div>
-                <span className="checkbox-indicator">{task.completed ? 'Erledigt' : 'Offen'}</span>
+                <span className="checkbox-indicator">{photoUploadPending && pendingPhotoTaskId === task._id ? 'Foto wird gespeichert' : (task.completed ? 'Erledigt' : 'Offen')}</span>
               </button>
             ))}
           </div>

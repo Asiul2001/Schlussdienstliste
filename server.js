@@ -139,7 +139,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -184,6 +184,7 @@ const taskTemplateSchema = new mongoose.Schema(
     recurrenceIntervalWeeks: { type: Number, default: 2 },
     recurrenceAnchorDate: { type: String, default: '' },
     weekdays: { type: [Number], default: [] },
+    needsPhoto: { type: Boolean, default: false },
     active: { type: Boolean, default: true },
     createdBy: { type: String, default: '' },
     updatedBy: { type: String, default: '' },
@@ -213,11 +214,14 @@ const checklistTaskSchema = new mongoose.Schema(
     recurrenceIntervalWeeks: { type: Number, default: 2 },
     recurrenceAnchorDate: { type: String, default: '' },
     weekdays: { type: [Number], default: [] },
+    needsPhoto: { type: Boolean, default: false },
     included: { type: Boolean, default: true },
     completed: { type: Boolean, default: false },
     completedAt: { type: Date, default: null },
     completedByColleague: { type: String, default: '' },
     completedByUser: { type: String, default: '' },
+    completionPhotoDataUrl: { type: String, default: '' },
+    completionPhotoCapturedAt: { type: Date, default: null },
     completionHistory: { type: [taskCompletionEventSchema], default: [] },
   },
   { timestamps: false }
@@ -393,6 +397,7 @@ function buildChecklistFromTemplates(templateDocs, existingShift) {
       title: template.title,
       section: template.section,
       requiredArea: template.requiredArea || '',
+      needsPhoto: Boolean(template.needsPhoto),
       scheduleType: template.scheduleType || SCHEDULE_TYPES.DAILY,
       scheduleDays: template.scheduleDays || [],
       recurrenceIntervalWeeks: template.recurrenceIntervalWeeks || 2,
@@ -409,6 +414,8 @@ function buildChecklistFromTemplates(templateDocs, existingShift) {
         completedAt: existingTask.completedAt,
         completedByColleague: existingTask.completedByColleague,
         completedByUser: existingTask.completedByUser,
+        completionPhotoDataUrl: existingTask.completionPhotoDataUrl || '',
+        completionPhotoCapturedAt: existingTask.completionPhotoCapturedAt || null,
         completionHistory: existingTask.completionHistory,
       };
     }
@@ -419,6 +426,8 @@ function buildChecklistFromTemplates(templateDocs, existingShift) {
       completedAt: null,
       completedByColleague: '',
       completedByUser: '',
+      completionPhotoDataUrl: '',
+      completionPhotoCapturedAt: null,
       completionHistory: [],
     };
   });
@@ -594,7 +603,7 @@ app.get('/api/templates', authenticate, async (req, res) => {
 });
 
 app.post('/api/templates', authenticate, requireRole(ROLES.GENERAL_MANAGER), async (req, res) => {
-  const { title, section, shiftType, requiredArea, weekdays, templateType, scheduleType, scheduleDays, recurrenceIntervalWeeks } = req.body;
+  const { title, section, shiftType, requiredArea, weekdays, templateType, scheduleType, scheduleDays, recurrenceIntervalWeeks, needsPhoto } = req.body;
 
   if (![title, shiftType].every((value) => typeof value === 'string' && value.trim())) {
     return res.status(400).json({ error: 'Titel und Checklistenart sind erforderlich' });
@@ -618,6 +627,7 @@ app.post('/api/templates', authenticate, requireRole(ROLES.GENERAL_MANAGER), asy
     shiftType: shiftType.trim(),
     templateType: effectiveTemplateType,
     requiredArea: typeof requiredArea === 'string' ? requiredArea : '',
+    needsPhoto: Boolean(needsPhoto),
     scheduleType: effectiveScheduleType,
     scheduleDays: effectiveScheduleType === SCHEDULE_TYPES.NEVER_DIRECT ? [] : normalizedScheduleDays,
     recurrenceIntervalWeeks: Number(recurrenceIntervalWeeks) > 0 ? Number(recurrenceIntervalWeeks) : 2,
@@ -654,6 +664,9 @@ app.put('/api/templates/:id', authenticate, requireRole(ROLES.GENERAL_MANAGER), 
   }
   if (typeof req.body.requiredArea === 'string') {
     payload.requiredArea = req.body.requiredArea;
+  }
+  if (typeof req.body.needsPhoto === 'boolean') {
+    payload.needsPhoto = req.body.needsPhoto;
   }
   if (typeof req.body.scheduleType === 'string' && Object.values(SCHEDULE_TYPES).includes(req.body.scheduleType)) {
     payload.scheduleType = req.body.scheduleType;
@@ -769,6 +782,7 @@ app.post('/api/shifts/:id/tasks', authenticate, requireRole(ROLES.GENERAL_MANAGE
       title: template.title,
       section: template.section,
       requiredArea: template.requiredArea || '',
+      needsPhoto: Boolean(template.needsPhoto),
       scheduleType: template.scheduleType || SCHEDULE_TYPES.DAILY,
       scheduleDays: template.scheduleDays || [],
       weekdays: template.weekdays || [],
@@ -778,6 +792,8 @@ app.post('/api/shifts/:id/tasks', authenticate, requireRole(ROLES.GENERAL_MANAGE
       completedAt: null,
       completedByColleague: '',
       completedByUser: '',
+      completionPhotoDataUrl: '',
+      completionPhotoCapturedAt: null,
       completionHistory: [],
     });
   } else if (source === 'one_time') {
@@ -790,12 +806,15 @@ app.post('/api/shifts/:id/tasks', authenticate, requireRole(ROLES.GENERAL_MANAGE
       section: section.trim(),
       requiredArea: '',
       weekdays: [],
+      needsPhoto: Boolean(req.body.needsPhoto),
       included: true,
       manual: true,
       completed: false,
       completedAt: null,
       completedByColleague: '',
       completedByUser: '',
+      completionPhotoDataUrl: '',
+      completionPhotoCapturedAt: null,
       completionHistory: [],
     });
   } else {
@@ -918,10 +937,23 @@ app.put('/api/shifts/:shiftId/tasks/:taskId', authenticate, async (req, res) => 
     }
   }
 
+  const photoDataUrl = typeof req.body.photoDataUrl === 'string' ? req.body.photoDataUrl.trim() : '';
+  if (photoDataUrl && !photoDataUrl.startsWith('data:image/')) {
+    return res.status(400).json({ error: 'Bitte ein gültiges Bild hochladen.' });
+  }
+
+  if (Boolean(req.body.completed) && task.needsPhoto && !photoDataUrl && !task.completionPhotoDataUrl) {
+    return res.status(400).json({ error: 'Für diese Aufgabe ist ein Foto erforderlich.' });
+  }
+
   task.completed = Boolean(req.body.completed);
   task.completedAt = req.body.completed ? new Date() : null;
   task.completedByColleague = req.body.completed ? req.body.colleagueName || '' : '';
   task.completedByUser = req.body.completed ? req.user.displayName : '';
+  task.completionPhotoDataUrl = req.body.completed ? (photoDataUrl || task.completionPhotoDataUrl || '') : '';
+  task.completionPhotoCapturedAt = req.body.completed
+    ? (photoDataUrl ? new Date() : (task.completionPhotoCapturedAt || null))
+    : null;
   task.completionHistory.push({
     completed: Boolean(req.body.completed),
     changedAt: new Date(),
