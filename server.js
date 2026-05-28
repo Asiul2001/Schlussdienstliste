@@ -425,12 +425,9 @@ function buildChecklistFromTemplates(templateDocs, existingShift) {
 }
 
 async function seedDefaults() {
-  for (const defaultUser of DEFAULT_USERS) {
-    await User.findOneAndUpdate(
-      { username: defaultUser.username },
-      defaultUser,
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+  const userCount = await User.countDocuments();
+  if (userCount === 0) {
+    await User.insertMany(DEFAULT_USERS);
   }
 
   const colleagueCount = await Colleague.countDocuments();
@@ -441,19 +438,18 @@ async function seedDefaults() {
     ]);
   }
 
-  const templateCollection = mongoose.connection.db.collection('tasktemplates');
-  await templateCollection.deleteMany({ createdBy: 'system' });
-  await templateCollection.insertMany(
-    DEFAULT_TEMPLATES.map((template) => ({
-      ...template,
-      templateType: template.templateType || TEMPLATE_TYPES.STANDARD,
-      active: true,
-      createdBy: 'system',
-      updatedBy: 'system',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }))
-  );
+  const templateCount = await TaskTemplate.countDocuments();
+  if (templateCount === 0) {
+    await TaskTemplate.insertMany(
+      DEFAULT_TEMPLATES.map((template) => ({
+        ...template,
+        templateType: template.templateType || TEMPLATE_TYPES.STANDARD,
+        active: true,
+        createdBy: 'system',
+        updatedBy: 'system',
+      }))
+    );
+  }
 }
 
 function authenticate(req, res, next) {
