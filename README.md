@@ -1,70 +1,70 @@
-# Getting Started with Create React App
+# Schlussdienstliste
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Full-stack checklist app for restaurant closing shifts.
 
-## Available Scripts
+## Stack
 
-In the project directory, you can run:
+- React frontend built with Create React App
+- Express + Socket.IO backend
+- MongoDB for persistence
 
-### `npm start`
+## Local development
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Install dependencies:
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+```bash
+npm install
+```
 
-### `npm test`
+Create a local env file from `.env.example` and set a MongoDB connection string.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Build the frontend:
 
-### `npm run build`
+```bash
+npm run build
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Start the app:
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```bash
+npm start
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+The server serves the React build and exposes the API on the same origin.
 
-### `npm run eject`
+## Production deployment
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+This app is not suitable for GitHub Pages because it needs:
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+- a Node.js server
+- Socket.IO
+- a MongoDB database
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+The repo includes [render.yaml](./render.yaml) for deploying to Render.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### Required environment variables
 
-## Learn More
+- `CLIENT_ORIGIN`
+- `JWT_SECRET`
+- `MONGODB_URI`
+- `HOST`
+- `PORT`
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+Use [.env.example](./.env.example) as the template.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+### Render steps
 
-### Code Splitting
+1. Push this repo to GitHub.
+2. Create a MongoDB Atlas database and copy its connection string into `MONGODB_URI`.
+3. In Render, create a new Blueprint or Web Service from this repo.
+4. Set `CLIENT_ORIGIN` to your final Render app URL.
+5. Set `MONGODB_URI` to the Atlas connection string.
+6. Deploy and confirm `GET /api/health` returns `{ "ok": true }`.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+## Health check
 
-### Analyzing the Bundle Size
+The app exposes:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+- `/api/health`
 
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+That endpoint returns a simple JSON payload for deployment health checks.

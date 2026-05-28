@@ -141,6 +141,13 @@ app.use(
 );
 app.use(express.json());
 
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    mongoReadyState: mongoose.connection.readyState,
+  });
+});
+
 io.on('connection', (socket) => {
   console.log(`Socket verbunden: ${socket.id}`);
 });
