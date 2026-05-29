@@ -1465,7 +1465,7 @@ function EmployeeView({
                     )}
                   </section>
                 ) : null}
-                <ChecklistSections
+                <ColoredChecklistSections
                   groupedTasks={groupedActiveTasks}
                   onToggle={(task) => toggleTask(activeShift._id, task, !task.completed)}
                   disableToggle={!activeColleagueName}
@@ -1709,7 +1709,7 @@ function ManagerView({
               </label>
             ) : null}
 
-            <ChecklistSections
+            <ColoredChecklistSections
               groupedTasks={groupedActiveTasks}
               onToggle={(task) => toggleTask(activeShift._id, task, !task.completed)}
               disableToggle={!activeShift.assignedColleagues.length}
@@ -2462,7 +2462,7 @@ function ShiftChecklistDetails({ shift }) {
           <p className="subtle">Gesamtaufgaben: {totalTasks}</p>
         </div>
       </div>
-      <ChecklistSections groupedTasks={groupedTasks} onToggle={() => {}} disableToggle />
+      <ColoredChecklistSections groupedTasks={groupedTasks} onToggle={() => {}} disableToggle />
     </div>
   );
 }
@@ -2589,6 +2589,63 @@ function FilteredOwnerView({ shifts, reports }) {
   );
 }
 
+function ColoredChecklistSections({ groupedTasks, onToggle, disableToggle, photoUploadPending, pendingPhotoTaskId }) {
+  const sections = Object.entries(groupedTasks);
+
+  if (!sections.length) {
+    return <p className="subtle">Für die heutigen Bereiche sind aktuell keine Aufgaben aktiv.</p>;
+  }
+
+  return (
+    <div className="stack">
+      {sections.map(([section, tasks]) => (
+        <section key={section} className="task-section">
+          <div className="panel-header">
+            <h3>{section}</h3>
+            <span className="pill">{tasks.filter((task) => task.completed).length}/{tasks.length}</span>
+          </div>
+          <div className="task-list">
+            {tasks.map((task) => {
+              const frequencyCategory = getTemplateFrequencyCategory(task);
+              const frequencyVisual = getTemplateFrequencyVisual(frequencyCategory);
+
+              return (
+                <button
+                  key={task._id}
+                  className={`task-row ${frequencyVisual.className} ${task.completed ? 'completed' : ''}`}
+                  onClick={() => onToggle(task)}
+                  disabled={disableToggle || (photoUploadPending && pendingPhotoTaskId === task._id)}
+                >
+                  <div>
+                    <strong>{task.title}</strong>
+                    <p>{task.completed ? `Erledigt von ${task.completedByColleague || task.completedByUser}` : (task.needsPhoto ? 'Antippen zum Abhaken und Foto aufnehmen' : 'Antippen zum Abhaken')}</p>
+                    <div className="task-meta">
+                      <span className={`task-proof-badge ${frequencyVisual.className}`}>{frequencyVisual.label}</span>
+                      {task.needsPhoto ? <span className="task-proof-badge">Foto erforderlich</span> : null}
+                      {task.completionPhotoDataUrl ? <span className="task-proof-badge">Foto gespeichert</span> : null}
+                    </div>
+                    {task.completionPhotoDataUrl ? (
+                      <img
+                        className="task-photo-preview"
+                        src={task.completionPhotoDataUrl}
+                        alt={`Nachweis für ${task.title}`}
+                      />
+                    ) : null}
+                  </div>
+                  <span className="checkbox-indicator">
+                    {photoUploadPending && pendingPhotoTaskId === task._id ? 'Foto wird gespeichert' : (task.completed ? 'Erledigt' : 'Offen')}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+// eslint-disable-next-line no-unused-vars
 function ChecklistSections({ groupedTasks, onToggle, disableToggle, photoUploadPending, pendingPhotoTaskId }) {
   const sections = Object.entries(groupedTasks);
 
