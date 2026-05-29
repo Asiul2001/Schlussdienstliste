@@ -321,6 +321,72 @@ select {
   align-items: center;
 }
 
+.compact-panel-header {
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.compact-panel-header h3 {
+  margin: 0;
+}
+
+.compact-usage-stack {
+  gap: 10px;
+}
+
+.compact-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.compact-choice-row .mini-button {
+  min-width: 84px;
+  padding: 8px 12px;
+}
+
+.compact-submit {
+  width: auto;
+  justify-self: start;
+  padding: 9px 14px;
+}
+
+.manager-task-form {
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.manager-task-form label {
+  gap: 6px;
+  font-size: 0.94rem;
+}
+
+.manager-task-form input,
+.manager-task-form select,
+.compact-role-select select {
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+.compact-role-select {
+  margin: 12px 0 10px;
+  max-width: 320px;
+}
+
+.compact-stack-gap {
+  gap: 8px;
+}
+
+.task-composer-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(120px, 0.8fr) auto auto;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -437,7 +503,17 @@ select {
 
   .compact-control-strip,
   .inline-form-grid,
-  .filter-grid {
+  .filter-grid,
+  .compact-usage-grid,
+  .task-composer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .compact-submit {
+    width: 100%;
+  }
+
+  .compact-choice-row .mini-button {
+    flex: 1 1 0;
   }
 }

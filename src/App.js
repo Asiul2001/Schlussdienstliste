@@ -799,6 +799,7 @@ function App() {
   );
 }
 
+// eslint-disable-next-line no-unused-vars
 function UsagePrompt({ usageForm, setUsageForm, saveShiftUsage }) {
   return (
     <div className="stack">
@@ -896,6 +897,186 @@ function ShiftFilterBar({ filters, setFilters }) {
   );
 }
 
+function CompactUsagePrompt({ usageForm, setUsageForm, saveShiftUsage }) {
+  return (
+    <div className="stack compact-usage-stack">
+      <div className="panel-header compact-panel-header">
+        <h3>Bereiche heute</h3>
+        <span className="pill">1x pro Tag</span>
+      </div>
+      <div className="compact-usage-grid">
+        <div className="task-section compact-task-entry">
+          <div className="panel-header">
+            <strong>Unten benutzt?</strong>
+            <span className="pill">
+              {typeof usageForm.untenUsed === 'boolean' ? (usageForm.untenUsed ? 'Ja' : 'Nein') : 'Offen'}
+            </span>
+          </div>
+          <div className="choice-row compact-choice-row">
+            <button
+              type="button"
+              className={`mini-button ${usageForm.untenUsed === true ? 'selected' : ''}`}
+              onClick={() => setUsageForm((current) => ({ ...current, untenUsed: true }))}
+            >
+              Ja
+            </button>
+            <button
+              type="button"
+              className={`mini-button ${usageForm.untenUsed === false ? 'selected' : ''}`}
+              onClick={() => setUsageForm((current) => ({ ...current, untenUsed: false }))}
+            >
+              Nein
+            </button>
+          </div>
+        </div>
+
+        <div className="task-section compact-task-entry">
+          <div className="panel-header">
+            <strong>Biergarten benutzt?</strong>
+            <span className="pill">
+              {typeof usageForm.biergartenUsed === 'boolean' ? (usageForm.biergartenUsed ? 'Ja' : 'Nein') : 'Offen'}
+            </span>
+          </div>
+          <div className="choice-row compact-choice-row">
+            <button
+              type="button"
+              className={`mini-button ${usageForm.biergartenUsed === true ? 'selected' : ''}`}
+              onClick={() => setUsageForm((current) => ({ ...current, biergartenUsed: true }))}
+            >
+              Ja
+            </button>
+            <button
+              type="button"
+              className={`mini-button ${usageForm.biergartenUsed === false ? 'selected' : ''}`}
+              onClick={() => setUsageForm((current) => ({ ...current, biergartenUsed: false }))}
+            >
+              Nein
+            </button>
+          </div>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="primary-button compact-submit"
+        onClick={saveShiftUsage}
+        disabled={typeof usageForm.untenUsed !== 'boolean' || typeof usageForm.biergartenUsed !== 'boolean'}
+      >
+        Bereichsnutzung speichern
+      </button>
+    </div>
+  );
+}
+
+// eslint-disable-next-line no-unused-vars
+function ManagerTaskComposer({ dailyTaskForm, setDailyTaskForm, addTaskToToday, activeShift, templates }) {
+  return (
+    <section className="task-section compact-task-entry">
+      <div className="panel-header compact-panel-header">
+        <div>
+          <h3>Aufgabe für heute</h3>
+          <p className="subtle">Kompakt für den Tagesablauf.</p>
+        </div>
+      </div>
+      <form className="stack compact-stack-gap" onSubmit={addTaskToToday}>
+        <div className="compact-action-bar">
+          <button
+            type="button"
+            className={`mini-button ${dailyTaskForm.source === 'pool' ? 'selected' : ''}`}
+            onClick={() =>
+              setDailyTaskForm((current) => ({
+                ...current,
+                source: 'pool',
+              }))
+            }
+          >
+            Aus Pool
+          </button>
+          <button
+            type="button"
+            className={`mini-button ${dailyTaskForm.source === 'one_time' ? 'selected' : ''}`}
+            onClick={() =>
+              setDailyTaskForm((current) => ({
+                ...current,
+                source: 'one_time',
+              }))
+            }
+          >
+            Einmalig
+          </button>
+        </div>
+
+        {dailyTaskForm.source === 'pool' ? (
+          <select
+            value={dailyTaskForm.templateId}
+            onChange={(event) =>
+              setDailyTaskForm((current) => ({
+                ...current,
+                templateId: event.target.value,
+              }))
+            }
+          >
+            <option value="">Pool-Aufgabe auswählen</option>
+            {templates
+              .filter((template) => template.templateType === 'occasional')
+              .map((template) => (
+                <option key={template._id} value={template._id}>
+                  {template.section} - {template.title}
+                </option>
+              ))}
+          </select>
+        ) : (
+          <div className="inline-form-grid task-composer-grid">
+            <input
+              value={dailyTaskForm.title}
+              placeholder="Neue Aufgabe für heute"
+              onChange={(event) =>
+                setDailyTaskForm((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }))
+              }
+            />
+            <select
+              value={dailyTaskForm.section}
+              onChange={(event) =>
+                setDailyTaskForm((current) => ({
+                  ...current,
+                  section: event.target.value,
+                }))
+              }
+            >
+              {SECTION_OPTIONS.map((option) => (
+                <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className={`mini-button ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
+              onClick={() =>
+                setDailyTaskForm((current) => ({
+                  ...current,
+                  needsPhoto: !current.needsPhoto,
+                }))
+              }
+            >
+              Foto
+            </button>
+            <button type="submit" className="primary-button compact-submit" disabled={!activeShift}>
+              Hinzufügen
+            </button>
+          </div>
+        )}
+
+        {dailyTaskForm.source === 'pool' ? (
+          <button type="submit" className="primary-button compact-submit" disabled={!activeShift || !dailyTaskForm.templateId}>
+            Hinzufügen
+          </button>
+        ) : null}
+      </form>
+    </section>
+  );
+}
+
 function EmployeeView({
   shifts,
   activeShift,
@@ -970,7 +1151,7 @@ function EmployeeView({
             </div>
 
             {usageIsRequired ? (
-              <UsagePrompt
+              <CompactUsagePrompt
                 usageForm={usageForm}
                 setUsageForm={setUsageForm}
                 saveShiftUsage={saveShiftUsage}
@@ -1049,7 +1230,7 @@ function EmployeeView({
                   Gearbeitet heute: {activeShift.assignedColleagues.map((colleague) => colleague.name).join(', ')}
                 </p>
                 {employeePanel === 'usage' ? (
-                  <UsagePrompt
+                  <CompactUsagePrompt
                     usageForm={usageForm}
                     setUsageForm={setUsageForm}
                     saveShiftUsage={saveShiftUsage}
@@ -1170,8 +1351,11 @@ function ManagerView({
           <button type="submit" className="primary-button">Checkliste erstellen oder aktualisieren</button>
         </form>
 
-        <h3>Aufgabe für heute hinzufügen</h3>
-        <form className="stack" onSubmit={addTaskToToday}>
+        <div className="panel-header compact-panel-header">
+          <h3>Aufgabe für heute</h3>
+          <span className="pill">Tagesliste</span>
+        </div>
+        <form className="stack manager-task-form" onSubmit={addTaskToToday}>
           <label>
             Typ
             <select
@@ -1241,11 +1425,11 @@ function ManagerView({
                   ))}
                 </select>
               </label>
-              <div className="stack">
+              <div className="stack compact-stack-gap">
                 <label>Foto-Nachweis</label>
                 <button
                   type="button"
-                  className={`roster-chip ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
+                  className={`mini-button ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
                   onClick={() =>
                     setDailyTaskForm((current) => ({
                       ...current,
@@ -1259,7 +1443,7 @@ function ManagerView({
             </>
           )}
 
-          <button type="submit" className="primary-button" disabled={!activeShift}>
+          <button type="submit" className="primary-button compact-submit" disabled={!activeShift}>
             Für heute hinzufügen
           </button>
         </form>
@@ -1291,7 +1475,7 @@ function ManagerView({
               <span className="pill">{activeShift.date}</span>
             </div>
 
-            <UsagePrompt
+            <CompactUsagePrompt
               usageForm={usageForm}
               setUsageForm={setUsageForm}
               saveShiftUsage={saveShiftUsage}
@@ -1319,8 +1503,8 @@ function ManagerView({
             </div>
 
             {activeShift.assignedColleagues.length ? (
-              <label>
-                Aufgabenansicht als
+              <label className="compact-select compact-role-select">
+                <span>Ich hake ab als</span>
                 <select
                   value={activeColleagueName}
                   onChange={(event) => setActiveColleagueName(event.target.value)}
