@@ -610,6 +610,17 @@ select {
   box-shadow: inset 4px 0 0 rgba(37, 99, 235, 0.4);
 }
 
+.task-list .task-row.completed {
+  border-color: rgba(15, 118, 110, 0.46);
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.22), rgba(255, 255, 255, 0.94));
+  box-shadow: inset 4px 0 0 rgba(15, 118, 110, 0.55);
+}
+
+.task-list .task-row.completed .task-proof-badge:first-child {
+  background: rgba(15, 118, 110, 0.18);
+  color: var(--accent-strong);
+}
+
 .checkbox-indicator {
   min-width: 72px;
   text-align: center;
