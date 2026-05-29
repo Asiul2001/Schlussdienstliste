@@ -476,6 +476,16 @@ select {
   color: #8a5a00;
 }
 
+.template-row.template-frequency-interval {
+  border-color: rgba(234, 88, 12, 0.36);
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.14), rgba(255, 255, 255, 0.82));
+}
+
+.template-frequency-badge.template-frequency-interval {
+  background: rgba(249, 115, 22, 0.18);
+  color: #9a3412;
+}
+
 .template-row.template-frequency-daily {
   border-color: rgba(37, 99, 235, 0.28);
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(255, 255, 255, 0.82));
@@ -519,6 +529,16 @@ select {
 .task-proof-badge.template-frequency-scheduled {
   background: rgba(250, 204, 21, 0.18);
   color: #8a5a00;
+}
+
+.task-row.template-frequency-interval {
+  border-color: rgba(234, 88, 12, 0.36);
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.14), rgba(255, 255, 255, 0.82));
+}
+
+.task-proof-badge.template-frequency-interval {
+  background: rgba(249, 115, 22, 0.18);
+  color: #9a3412;
 }
 
 .task-proof-badge.template-frequency-daily {

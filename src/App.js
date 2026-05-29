@@ -244,10 +244,16 @@ function getTemplateFrequencyVisual(category) {
       label: 'Gelegentlich',
     };
   }
-  if (category === 'selected_days' || category === 'interval_weeks') {
+  if (category === 'interval_weeks') {
+    return {
+      className: 'template-frequency-interval',
+      label: 'Alle x Wochen',
+    };
+  }
+  if (category === 'selected_days') {
     return {
       className: 'template-frequency-scheduled',
-      label: category === 'interval_weeks' ? 'Alle x Wochen' : 'Tag-spezifisch',
+      label: 'Tag-spezifisch',
     };
   }
   return {
