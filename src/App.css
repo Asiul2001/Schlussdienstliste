@@ -285,6 +285,10 @@ select {
   gap: 8px;
 }
 
+.task-mode-bar {
+  margin-bottom: 10px;
+}
+
 .mini-button {
   border: 1px solid var(--line);
   border-radius: 999px;

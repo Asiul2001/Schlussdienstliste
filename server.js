@@ -778,6 +778,88 @@ app.post('/api/shifts', authenticate, requireRole(ROLES.GENERAL_MANAGER), async 
   return res.status(201).json(sanitizeShift(shift));
 });
 
+app.post('/api/shifts/:id/tasks', authenticate, async (req, res, next) => {
+  const shift = await Shift.findById(req.params.id);
+  if (!shift) {
+    return res.status(404).json({ error: 'Checkliste nicht gefunden' });
+  }
+
+  const { source, templateId, title, section } = req.body;
+
+  if (source === 'pool') {
+    if (req.user.role === ROLES.EMPLOYEE && shift.date !== getBerlinDateString()) {
+      return res.status(403).json({ error: 'Pool-Aufgaben können nur für die heutige Checkliste hinzugefügt werden.' });
+    }
+    if (req.user.role !== ROLES.GENERAL_MANAGER && req.user.role !== ROLES.EMPLOYEE) {
+      return res.status(403).json({ error: 'Diese Rolle darf keine Pool-Aufgaben hinzufügen.' });
+    }
+    if (!templateId) {
+      return res.status(400).json({ error: 'Bitte eine Aufgabe aus dem Pool auswählen' });
+    }
+
+    const template = await TaskTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ error: 'Pool-Aufgabe nicht gefunden' });
+    }
+    if (req.user.role === ROLES.EMPLOYEE && template.templateType !== TEMPLATE_TYPES.OCCASIONAL) {
+      return res.status(403).json({ error: 'Im General-Zugang dürfen nur gelegentliche Pool-Aufgaben hinzugefügt werden.' });
+    }
+
+    shift.checklist.push({
+      templateId: template._id,
+      title: template.title,
+      section: template.section,
+      requiredArea: template.requiredArea || '',
+      needsPhoto: Boolean(template.needsPhoto),
+      scheduleType: template.scheduleType || SCHEDULE_TYPES.DAILY,
+      scheduleDays: template.scheduleDays || [],
+      weekdays: template.weekdays || [],
+      included: true,
+      manual: true,
+      completed: false,
+      completedAt: null,
+      completedByColleague: '',
+      completedByUser: '',
+      completionPhotoDataUrl: '',
+      completionPhotoCapturedAt: null,
+      completionHistory: [],
+    });
+  } else if (source === 'one_time') {
+    if (req.user.role === ROLES.EMPLOYEE && shift.date !== getBerlinDateString()) {
+      return res.status(403).json({ error: 'Zusätzliche Aufgaben können nur für die heutige Checkliste angelegt werden.' });
+    }
+    if (!title || !title.trim() || !section || !section.trim()) {
+      return res.status(400).json({ error: 'Bitte Titel und Bereich für die einmalige Aufgabe angeben' });
+    }
+
+    shift.checklist.push({
+      title: title.trim(),
+      section: section.trim(),
+      requiredArea: '',
+      weekdays: [],
+      needsPhoto: Boolean(req.body.needsPhoto),
+      included: true,
+      manual: true,
+      completed: false,
+      completedAt: null,
+      completedByColleague: '',
+      completedByUser: '',
+      completionPhotoDataUrl: '',
+      completionPhotoCapturedAt: null,
+      completionHistory: [],
+    });
+  } else {
+    return next();
+  }
+
+  shift.updatedBy = req.user.displayName;
+
+  await updateShiftStatus(shift);
+  io.emit('shiftUpdated', sanitizeShift(shift));
+
+  return res.status(201).json(sanitizeShift(shift));
+});
+
 app.post('/api/shifts/:id/tasks', authenticate, async (req, res) => {
   const shift = await Shift.findById(req.params.id);
   if (!shift) {

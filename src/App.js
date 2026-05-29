@@ -91,6 +91,21 @@ function getTodayBerlin() {
   return previousDate.toISOString().slice(0, 10);
 }
 
+function formatBusinessDayLabel(dateString) {
+  if (!dateString) {
+    return '';
+  }
+
+  const date = new Date(`${dateString}T12:00:00Z`);
+  return new Intl.DateTimeFormat('de-DE', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
 function authHeaders(token) {
   return {
     headers: {
@@ -218,6 +233,7 @@ function App() {
 
   const canManageOperations = user?.role === 'general_manager';
   const canManageColleagues = user?.role === 'general_manager' || user?.role === 'owner';
+  const businessDayLabel = formatBusinessDayLabel(selectedDate);
 
   const loadDashboardData = useCallback(async (role, date) => {
     setLoadingData(true);
@@ -228,9 +244,7 @@ function App() {
         axios.get(`${API_BASE}/shifts?date=${date}`, authHeaders(token)),
       ];
 
-      if (role !== 'employee') {
-        requests.push(axios.get(`${API_BASE}/templates`, authHeaders(token)));
-      }
+      requests.push(axios.get(`${API_BASE}/templates`, authHeaders(token)));
 
       if (role === 'general_manager' || role === 'owner') {
         requests.push(axios.get(`${API_BASE}/reports/overview`, authHeaders(token)));
@@ -703,7 +717,7 @@ function App() {
           <p className="eyebrow">Checklisten System</p>
           <h1>{ROLE_LABELS[user.role]}</h1>
           <p className="subtle">
-            Angemeldet als {user.displayName}. Aktuelles Datum: {selectedDate}
+            Angemeldet als {user.displayName}. Servicetag: {businessDayLabel}, gültig bis 05:00 Uhr.
           </p>
         </div>
         <div className="topbar-actions">
@@ -737,6 +751,7 @@ function App() {
           activeShift={activeShift}
           setActiveShiftId={setActiveShiftId}
           groupedActiveTasks={groupedActiveTasks}
+          templates={templates}
           colleagues={colleagues.filter((colleague) => colleague.active)}
           selectedRosterIds={selectedRosterIds}
           setSelectedRosterIds={setSelectedRosterIds}
@@ -1101,6 +1116,7 @@ function EmployeeView({
   activeShift,
   setActiveShiftId,
   groupedActiveTasks,
+  templates,
   colleagues,
   selectedRosterIds,
   setSelectedRosterIds,
@@ -1164,7 +1180,7 @@ function EmployeeView({
             <div className="panel-header">
               <div>
                 <h2>{formatShiftLabel(activeShift.shiftType)}</h2>
-                <p className="subtle">Die Aufgaben sind nach Bereichen getrennt und nur für heute sichtbar.</p>
+                <p className="subtle">Servicetag: {formatBusinessDayLabel(activeShift.date)}, gültig bis 05:00 Uhr.</p>
               </div>
               <span className="pill">{activeShift.status}</span>
             </div>
@@ -1246,7 +1262,7 @@ function EmployeeView({
                   </label>
                 </div>
                 <p className="subtle">
-                  Gearbeitet heute: {activeShift.assignedColleagues.map((colleague) => colleague.name).join(', ')}
+                  Gearbeitet am {formatBusinessDayLabel(activeShift.date)} bis 05:00 Uhr: {activeShift.assignedColleagues.map((colleague) => colleague.name).join(', ')}
                 </p>
                 {employeePanel === 'usage' ? (
                   <CompactUsagePrompt
@@ -1257,49 +1273,104 @@ function EmployeeView({
                 ) : null}
                 {employeePanel === 'task' ? (
                   <section className="task-section compact-task-entry">
-                    <form className="inline-form-grid" onSubmit={addTaskToToday}>
-                      <input
-                        value={dailyTaskForm.title}
-                        placeholder="Neue Aufgabe für heute"
-                        onChange={(event) =>
+                    <div className="compact-action-bar task-mode-bar">
+                      <button
+                        type="button"
+                        className={`mini-button ${dailyTaskForm.source === 'pool' ? 'selected' : ''}`}
+                        onClick={() =>
                           setDailyTaskForm((current) => ({
                             ...current,
-                            source: 'one_time',
-                            title: event.target.value,
-                          }))
-                        }
-                      />
-                      <select
-                        value={dailyTaskForm.section}
-                        onChange={(event) =>
-                          setDailyTaskForm((current) => ({
-                            ...current,
-                            source: 'one_time',
-                            section: event.target.value,
+                            source: 'pool',
                           }))
                         }
                       >
-                        {SECTION_OPTIONS.map((option) => (
-                          <option key={option.value || 'none'} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
+                        Gelegentlich aus Pool
+                      </button>
                       <button
                         type="button"
-                        className={`mini-button ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
+                        className={`mini-button ${dailyTaskForm.source === 'one_time' ? 'selected' : ''}`}
                         onClick={() =>
                           setDailyTaskForm((current) => ({
                             ...current,
                             source: 'one_time',
-                            needsPhoto: !current.needsPhoto,
                           }))
                         }
                       >
-                        Foto
+                        Einmalig
                       </button>
-                      <button type="submit" className="primary-button">
-                        Hinzufügen
-                      </button>
-                    </form>
+                    </div>
+                    {dailyTaskForm.source === 'pool' ? (
+                      <form className="inline-form-grid task-composer-grid" onSubmit={addTaskToToday}>
+                        <select
+                          value={dailyTaskForm.templateId}
+                          onChange={(event) =>
+                            setDailyTaskForm((current) => ({
+                              ...current,
+                              source: 'pool',
+                              templateId: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Gelegentliche Pool-Aufgabe auswählen</option>
+                          {templates
+                            .filter((template) => template.templateType === 'occasional')
+                            .map((template) => (
+                              <option key={template._id} value={template._id}>
+                                {template.section} - {template.title}
+                              </option>
+                            ))}
+                        </select>
+                        <div />
+                        <div />
+                        <button type="submit" className="primary-button" disabled={!dailyTaskForm.templateId}>
+                          Hinzufügen
+                        </button>
+                      </form>
+                    ) : (
+                      <form className="inline-form-grid task-composer-grid" onSubmit={addTaskToToday}>
+                        <input
+                          value={dailyTaskForm.title}
+                          placeholder="Neue Aufgabe für heute"
+                          onChange={(event) =>
+                            setDailyTaskForm((current) => ({
+                              ...current,
+                              source: 'one_time',
+                              title: event.target.value,
+                            }))
+                          }
+                        />
+                        <select
+                          value={dailyTaskForm.section}
+                          onChange={(event) =>
+                            setDailyTaskForm((current) => ({
+                              ...current,
+                              source: 'one_time',
+                              section: event.target.value,
+                            }))
+                          }
+                        >
+                          {SECTION_OPTIONS.map((option) => (
+                            <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className={`mini-button ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
+                          onClick={() =>
+                            setDailyTaskForm((current) => ({
+                              ...current,
+                              source: 'one_time',
+                              needsPhoto: !current.needsPhoto,
+                            }))
+                          }
+                        >
+                          Foto
+                        </button>
+                        <button type="submit" className="primary-button">
+                          Hinzufügen
+                        </button>
+                      </form>
+                    )}
                   </section>
                 ) : null}
                 <ChecklistSections
