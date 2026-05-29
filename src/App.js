@@ -131,6 +131,21 @@ function formatShiftLabel(shiftType) {
   return SHIFT_OPTIONS.find((entry) => entry.value === shiftType)?.label || shiftType;
 }
 
+function getFreshTemplateForm() {
+  return {
+    id: '',
+    title: '',
+    section: 'Oben',
+    shiftType: 'closing',
+    templateType: 'standard',
+    requiredArea: '',
+    needsPhoto: false,
+    scheduleType: 'daily',
+    scheduleDays: [],
+    recurrenceIntervalWeeks: 2,
+  };
+}
+
 function groupTemplatesBySection(templates) {
   return templates.reduce((accumulator, template) => {
     const section = template.section || 'Allgemein';
@@ -140,6 +155,86 @@ function groupTemplatesBySection(templates) {
     accumulator[section].push(template);
     return accumulator;
   }, {});
+}
+
+function getTemplateFrequencyCategory(template) {
+  if ((template.scheduleType || '') === 'never_direct' || template.templateType === 'occasional') {
+    return 'occasional';
+  }
+  if ((template.scheduleType || '') === 'selected_days') {
+    return 'selected_days';
+  }
+  if ((template.scheduleType || '') === 'interval_weeks') {
+    return 'interval_weeks';
+  }
+  return 'daily';
+}
+
+function templateMatchesFilters(template, filters) {
+  const searchText = [
+    template.title,
+    template.section,
+    template.shiftType,
+    formatTemplateScheduleHint(template),
+    template.templateType === 'occasional' ? 'gelegentlich' : 'standard',
+    template.needsPhoto ? 'foto' : '',
+  ].join(' ').toLowerCase();
+
+  if (filters.search && !searchText.includes(filters.search.toLowerCase())) {
+    return false;
+  }
+  if (filters.section !== 'all' && (template.section || '') !== filters.section) {
+    return false;
+  }
+  if (filters.frequency !== 'all' && getTemplateFrequencyCategory(template) !== filters.frequency) {
+    return false;
+  }
+  if (filters.templateType !== 'all' && (template.templateType || 'standard') !== filters.templateType) {
+    return false;
+  }
+  if (filters.photo === 'required' && !template.needsPhoto) {
+    return false;
+  }
+  if (filters.photo === 'not_required' && template.needsPhoto) {
+    return false;
+  }
+  if (filters.area !== 'all' && (template.requiredArea || '') !== filters.area) {
+    return false;
+  }
+  return true;
+}
+
+function sortTemplates(templates, sortBy) {
+  const items = [...templates];
+
+  items.sort((left, right) => {
+    if (sortBy === 'title') {
+      return left.title.localeCompare(right.title, 'de');
+    }
+    if (sortBy === 'section') {
+      return `${left.section || ''} ${left.title}`.localeCompare(`${right.section || ''} ${right.title}`, 'de');
+    }
+    if (sortBy === 'frequency') {
+      const order = {
+        daily: 0,
+        selected_days: 1,
+        interval_weeks: 2,
+        occasional: 3,
+      };
+      return (order[getTemplateFrequencyCategory(left)] ?? 99) - (order[getTemplateFrequencyCategory(right)] ?? 99)
+        || left.title.localeCompare(right.title, 'de');
+    }
+    if (sortBy === 'type') {
+      return `${left.templateType || 'standard'} ${left.title}`.localeCompare(`${right.templateType || 'standard'} ${right.title}`, 'de');
+    }
+    if (sortBy === 'photo') {
+      return Number(Boolean(right.needsPhoto)) - Number(Boolean(left.needsPhoto))
+        || left.title.localeCompare(right.title, 'de');
+    }
+    return left.title.localeCompare(right.title, 'de');
+  });
+
+  return items;
 }
 
 function toggleScheduleDay(days, day) {
@@ -203,18 +298,7 @@ function App() {
   const [activeColleagueName, setActiveColleagueName] = useState('');
   const [newColleagueName, setNewColleagueName] = useState('');
   const [usageForm, setUsageForm] = useState({ untenUsed: null, biergartenUsed: null });
-  const [templateForm, setTemplateForm] = useState({
-    id: '',
-    title: '',
-    section: 'Oben',
-    shiftType: 'closing',
-    templateType: 'standard',
-    requiredArea: '',
-    needsPhoto: false,
-    scheduleType: 'daily',
-    scheduleDays: [],
-    recurrenceIntervalWeeks: 2,
-  });
+  const [templateForm, setTemplateForm] = useState(getFreshTemplateForm);
   const [dailyTaskForm, setDailyTaskForm] = useState({
     source: 'pool',
     templateId: '',
@@ -480,18 +564,7 @@ function App() {
         setMessage('Aufgabenvorlage erstellt.');
       }
 
-        setTemplateForm({
-          id: '',
-          title: '',
-          section: 'Oben',
-          shiftType: 'closing',
-          templateType: 'standard',
-          requiredArea: '',
-          needsPhoto: false,
-          scheduleType: 'daily',
-          scheduleDays: [],
-          recurrenceIntervalWeeks: 2,
-        });
+        setTemplateForm(getFreshTemplateForm());
     } catch (error) {
       setMessage(error.response?.data?.error || 'Aufgabenvorlage konnte nicht gespeichert werden.');
     }
@@ -798,7 +871,7 @@ function App() {
       ) : null}
 
       {route === '#/vorlagen' && canManageOperations ? (
-        <TemplateView
+        <EnhancedTemplateView
           templates={templates}
           templateForm={templateForm}
           setTemplateForm={setTemplateForm}
@@ -1633,6 +1706,7 @@ function ManagerView({
   );
 }
 
+// eslint-disable-next-line no-unused-vars
 function TemplateView({ templates, templateForm, setTemplateForm, submitTemplate, deleteTemplate }) {
   const groupedTemplates = groupTemplatesBySection(templates);
   const sectionEntries = Object.entries(groupedTemplates).sort((a, b) => a[0].localeCompare(b[0]));
@@ -1793,7 +1867,7 @@ function TemplateSection({ section, templates, setTemplateForm, deleteTemplate }
       <button className="task-row" onClick={() => setIsOpen((current) => !current)}>
         <div>
           <strong>{section}</strong>
-          <p>{templates.length} Standardaufgaben</p>
+          <p>{templates.length} Aufgaben</p>
         </div>
         <span className="checkbox-indicator">{isOpen ? 'Zuklappen' : 'Aufklappen'}</span>
       </button>
@@ -1810,24 +1884,7 @@ function TemplateSection({ section, templates, setTemplateForm, deleteTemplate }
                 <button
                   type="button"
                   className="ghost-button"
-                  onClick={() =>
-                    setTemplateForm({
-                      id: template._id,
-                      title: template.title,
-                      section: template.section,
-                      shiftType: template.shiftType,
-                      templateType: template.templateType || 'standard',
-                      requiredArea: template.requiredArea || '',
-                      needsPhoto: Boolean(template.needsPhoto),
-                      scheduleType: template.templateType === 'occasional'
-                        ? 'never_direct'
-                        : (template.scheduleType || ((template.scheduleDays?.length || template.weekdays?.length) ? 'selected_days' : 'daily')),
-                      scheduleDays: template.scheduleType === 'never_direct'
-                        ? []
-                        : (template.scheduleDays?.length ? template.scheduleDays : (template.weekdays || [])),
-                      recurrenceIntervalWeeks: template.recurrenceIntervalWeeks || 2,
-                    })
-                  }
+                  onClick={() => setTemplateForm(template)}
                 >
                   Bearbeiten
                 </button>
@@ -2040,6 +2097,276 @@ function OwnerView({ shifts, reports }) {
               <p>{shift.status}</p>
               <p>Kollegen: {shift.assignedColleagues.map((person) => person.name).join(', ') || 'Noch offen'}</p>
             </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TemplateFilterBar({ filters, setFilters }) {
+  return (
+    <div className="filter-grid">
+      <input
+        value={filters.search}
+        onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+        placeholder="Nach Aufgabe, Bereich oder Ablauf suchen"
+      />
+      <select value={filters.section} onChange={(event) => setFilters((current) => ({ ...current, section: event.target.value }))}>
+        <option value="all">Alle Bereiche</option>
+        {SECTION_OPTIONS.map((option) => (
+          <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+      <select value={filters.frequency} onChange={(event) => setFilters((current) => ({ ...current, frequency: event.target.value }))}>
+        <option value="all">Jede Häufigkeit</option>
+        <option value="daily">Täglich</option>
+        <option value="selected_days">Bestimmte Tage</option>
+        <option value="interval_weeks">Intervall</option>
+        <option value="occasional">Gelegentlich / nie direkt</option>
+      </select>
+      <select value={filters.templateType} onChange={(event) => setFilters((current) => ({ ...current, templateType: event.target.value }))}>
+        <option value="all">Alle Typen</option>
+        <option value="standard">Standard</option>
+        <option value="occasional">Gelegentlich</option>
+      </select>
+      <select value={filters.photo} onChange={(event) => setFilters((current) => ({ ...current, photo: event.target.value }))}>
+        <option value="all">Foto egal</option>
+        <option value="required">Mit Foto</option>
+        <option value="not_required">Ohne Foto</option>
+      </select>
+      <select value={filters.area} onChange={(event) => setFilters((current) => ({ ...current, area: event.target.value }))}>
+        <option value="all">Alle Anzeige-Regeln</option>
+        {AREA_OPTIONS.map((area) => (
+          <option key={area.value || 'always'} value={area.value}>{area.label}</option>
+        ))}
+      </select>
+      <select value={filters.sortBy} onChange={(event) => setFilters((current) => ({ ...current, sortBy: event.target.value }))}>
+        <option value="section">Sortierung: Bereich</option>
+        <option value="title">Sortierung: Name</option>
+        <option value="frequency">Sortierung: Häufigkeit</option>
+        <option value="type">Sortierung: Typ</option>
+        <option value="photo">Sortierung: Foto</option>
+      </select>
+    </div>
+  );
+}
+
+function EnhancedTemplateView({ templates, templateForm, setTemplateForm, submitTemplate, deleteTemplate }) {
+  const [filters, setFilters] = useState({
+    search: '',
+    section: 'all',
+    frequency: 'all',
+    templateType: 'all',
+    photo: 'all',
+    area: 'all',
+    sortBy: 'section',
+  });
+
+  const filteredTemplates = useMemo(
+    () => sortTemplates(templates.filter((template) => templateMatchesFilters(template, filters)), filters.sortBy),
+    [templates, filters]
+  );
+  const groupedTemplates = groupTemplatesBySection(filteredTemplates);
+  const sectionEntries = Object.entries(groupedTemplates).sort((a, b) => a[0].localeCompare(b[0]));
+
+  function startEditTemplate(template) {
+    setTemplateForm({
+      id: template._id,
+      title: template.title,
+      section: template.section,
+      shiftType: template.shiftType,
+      templateType: template.templateType || 'standard',
+      requiredArea: template.requiredArea || '',
+      needsPhoto: Boolean(template.needsPhoto),
+      scheduleType: template.templateType === 'occasional'
+        ? 'never_direct'
+        : (template.scheduleType || ((template.scheduleDays?.length || template.weekdays?.length) ? 'selected_days' : 'daily')),
+      scheduleDays: template.scheduleType === 'never_direct'
+        ? []
+        : (template.scheduleDays?.length ? template.scheduleDays : (template.weekdays || [])),
+      recurrenceIntervalWeeks: template.recurrenceIntervalWeeks || 2,
+    });
+  }
+
+  return (
+    <div className="dashboard-grid">
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>{templateForm.id ? 'Aufgabe bearbeiten' : 'Aufgabe anlegen'}</h2>
+            <p className="subtle">Klarer aufgebaut für Titel, Bereich, Ablauf und Foto-Nachweis.</p>
+          </div>
+          {templateForm.id ? (
+            <button type="button" className="ghost-button" onClick={() => setTemplateForm(getFreshTemplateForm())}>
+              Neu anfangen
+            </button>
+          ) : null}
+        </div>
+
+        <form className="stack" onSubmit={submitTemplate}>
+          <div className="editor-card">
+            <div className="editor-card-title">
+              <strong>Grunddaten</strong>
+              <span className="pill">{templateForm.id ? 'Bearbeiten' : 'Neu'}</span>
+            </div>
+            <div className="filter-grid">
+              <label>
+                Aufgabe
+                <input
+                  value={templateForm.title}
+                  onChange={(event) => setTemplateForm((current) => ({ ...current, title: event.target.value }))}
+                />
+              </label>
+              <label>
+                Bereich
+                <select
+                  value={templateForm.section}
+                  onChange={(event) => setTemplateForm((current) => ({ ...current, section: event.target.value }))}
+                >
+                  {SECTION_OPTIONS.map((option) => (
+                    <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Typ
+                <select
+                  value={templateForm.templateType}
+                  onChange={(event) => {
+                    const nextType = event.target.value;
+                    setTemplateForm((current) => ({
+                      ...current,
+                      templateType: nextType,
+                      scheduleType: nextType === 'occasional' ? 'never_direct' : (current.scheduleType === 'never_direct' ? 'daily' : current.scheduleType),
+                      scheduleDays: nextType === 'occasional' ? [] : current.scheduleDays,
+                    }));
+                  }}
+                >
+                  {TEMPLATE_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Nur anzeigen wenn
+                <select
+                  value={templateForm.requiredArea}
+                  onChange={(event) => setTemplateForm((current) => ({ ...current, requiredArea: event.target.value }))}
+                >
+                  {AREA_OPTIONS.map((area) => (
+                    <option key={area.value || 'always'} value={area.value}>{area.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="editor-card">
+            <div className="editor-card-title">
+              <strong>Ablauf</strong>
+              <span className="subtle">Wie oft und an welchen Tagen die Aufgabe erscheint.</span>
+            </div>
+            <div className="filter-grid">
+              <label>
+                Häufigkeit
+                <select
+                  value={templateForm.scheduleType}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setTemplateForm((current) => ({
+                      ...current,
+                      scheduleType: value,
+                      scheduleDays: value === 'never_direct' ? [] : current.scheduleDays,
+                      templateType: current.templateType === 'occasional' && value !== 'never_direct' ? 'standard' : current.templateType,
+                    }));
+                  }}
+                >
+                  {FREQUENCY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="stack compact-stack-gap">
+                <label>Foto-Nachweis</label>
+                <button
+                  type="button"
+                  className={`roster-chip ${templateForm.needsPhoto ? 'selected' : ''}`}
+                  onClick={() => setTemplateForm((current) => ({ ...current, needsPhoto: !current.needsPhoto }))}
+                >
+                  {templateForm.needsPhoto ? 'Foto beim Erledigen erforderlich' : 'Kein Foto erforderlich'}
+                </button>
+              </div>
+            </div>
+
+            {templateForm.templateType !== 'occasional' && templateForm.scheduleType !== 'daily' && templateForm.scheduleType !== 'never_direct' ? (
+              <div className="stack">
+                <label>Tage auswählen</label>
+                <div className="roster-grid">
+                  {WEEKDAY_OPTIONS.map((option) => {
+                    const selected = templateForm.scheduleDays.includes(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`roster-chip ${selected ? 'selected' : ''}`}
+                        onClick={() =>
+                          setTemplateForm((current) => ({
+                            ...current,
+                            scheduleDays: toggleScheduleDay(current.scheduleDays, option.value),
+                          }))
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {templateForm.scheduleType === 'interval_weeks' ? (
+              <label>
+                Alle wie viele Wochen?
+                <input
+                  type="number"
+                  min="1"
+                  value={templateForm.recurrenceIntervalWeeks}
+                  onChange={(event) =>
+                    setTemplateForm((current) => ({
+                      ...current,
+                      recurrenceIntervalWeeks: Number(event.target.value) > 0 ? Number(event.target.value) : 1,
+                    }))
+                  }
+                />
+              </label>
+            ) : null}
+          </div>
+
+          <button type="submit" className="primary-button">
+            {templateForm.id ? 'Änderungen speichern' : 'Vorlage hinzufügen'}
+          </button>
+        </form>
+      </section>
+
+      <section className="panel wide-panel">
+        <div className="panel-header">
+          <div>
+            <h2>Aufgabenpool</h2>
+            <p className="subtle">Filtere und sortiere nach Bereich, Häufigkeit, Typ, Foto und Anzeige-Regeln.</p>
+          </div>
+          <span className="pill">{filteredTemplates.length} Treffer</span>
+        </div>
+        <TemplateFilterBar filters={filters} setFilters={setFilters} />
+        <div className="template-list">
+          {sectionEntries.map(([section, sectionTemplates]) => (
+            <TemplateSection
+              key={section}
+              section={section}
+              templates={sectionTemplates}
+              setTemplateForm={startEditTemplate}
+              deleteTemplate={deleteTemplate}
+            />
           ))}
         </div>
       </section>
