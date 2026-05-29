@@ -1481,6 +1481,14 @@ function ManagerView({
               saveShiftUsage={saveShiftUsage}
             />
 
+            <ManagerTaskComposer
+              dailyTaskForm={dailyTaskForm}
+              setDailyTaskForm={setDailyTaskForm}
+              addTaskToToday={addTaskToToday}
+              activeShift={activeShift}
+              templates={templates}
+            />
+
             <h3>Schichtbesetzung</h3>
             <div className="roster-grid">
               {colleagues.map((colleague) => {
