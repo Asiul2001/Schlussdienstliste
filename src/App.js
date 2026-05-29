@@ -112,6 +112,36 @@ function toggleScheduleDay(days, day) {
   return days.includes(day) ? days.filter((entry) => entry !== day) : [...days, day].sort((a, b) => a - b);
 }
 
+function matchesShiftFilters(shift, filters) {
+  const colleagueNames = (shift.assignedColleagues || []).map((person) => person.name).join(' ').toLowerCase();
+  const taskText = (shift.checklist || []).map((task) => task.title).join(' ').toLowerCase();
+  const searchText = `${shift.date} ${shift.shiftType} ${shift.status} ${colleagueNames} ${taskText}`.toLowerCase();
+
+  if (filters.search && !searchText.includes(filters.search.toLowerCase())) {
+    return false;
+  }
+  if (filters.status !== 'all' && shift.status !== filters.status) {
+    return false;
+  }
+  if (filters.shiftType !== 'all' && shift.shiftType !== filters.shiftType) {
+    return false;
+  }
+  if (filters.from && shift.date < filters.from) {
+    return false;
+  }
+  if (filters.to && shift.date > filters.to) {
+    return false;
+  }
+  if (filters.completion === 'open' && shift.completionRate >= 100) {
+    return false;
+  }
+  if (filters.completion === 'done' && shift.completionRate < 100) {
+    return false;
+  }
+
+  return true;
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -743,7 +773,7 @@ function App() {
         />
       ) : null}
 
-      {route === '#/historie' ? <HistoryView shifts={shifts} /> : null}
+      {route === '#/historie' ? <FilteredHistoryView shifts={shifts} /> : null}
 
       {route === '#/kollegen' && canManageColleagues ? (
         <TeamView
@@ -756,7 +786,7 @@ function App() {
       ) : null}
 
       {route === '#/berichte' && user.role === 'owner' ? <ReportsView reports={reports} /> : null}
-      {route === '#/owner' && user.role === 'owner' ? <OwnerView shifts={shifts} reports={reports} /> : null}
+      {route === '#/owner' && user.role === 'owner' ? <FilteredOwnerView shifts={shifts} reports={reports} /> : null}
       <input
         ref={photoInputRef}
         type="file"
@@ -831,6 +861,41 @@ function UsagePrompt({ usageForm, setUsageForm, saveShiftUsage }) {
   );
 }
 
+function ShiftFilterBar({ filters, setFilters }) {
+  function update(field, value) {
+    setFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  return (
+    <div className="filter-grid">
+      <input
+        value={filters.search}
+        onChange={(event) => update('search', event.target.value)}
+        placeholder="Suchen nach Datum, Kollegen oder Aufgaben"
+      />
+      <select value={filters.status} onChange={(event) => update('status', event.target.value)}>
+        <option value="all">Alle Status</option>
+        <option value="open">Offen</option>
+        <option value="in_progress">In Bearbeitung</option>
+        <option value="completed">Erledigt</option>
+      </select>
+      <select value={filters.shiftType} onChange={(event) => update('shiftType', event.target.value)}>
+        <option value="all">Alle Listenarten</option>
+        {SHIFT_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+      <select value={filters.completion} onChange={(event) => update('completion', event.target.value)}>
+        <option value="all">Jeder Fortschritt</option>
+        <option value="open">Nicht vollständig</option>
+        <option value="done">100% erledigt</option>
+      </select>
+      <input type="date" value={filters.from} onChange={(event) => update('from', event.target.value)} />
+      <input type="date" value={filters.to} onChange={(event) => update('to', event.target.value)} />
+    </div>
+  );
+}
+
 function EmployeeView({
   shifts,
   activeShift,
@@ -853,6 +918,20 @@ function EmployeeView({
   photoUploadPending,
   pendingPhotoTaskId,
 }) {
+  const [employeePanel, setEmployeePanel] = useState('roster');
+
+  useEffect(() => {
+    if (usageIsRequired) {
+      setEmployeePanel('usage');
+      return;
+    }
+    if (!activeShift?.assignedColleagues.length) {
+      setEmployeePanel('roster');
+      return;
+    }
+    setEmployeePanel('task');
+  }, [usageIsRequired, activeShift?._id, activeShift?.assignedColleagues.length]);
+
   if (!shifts.length) {
     return (
       <section className="panel">
@@ -898,47 +977,90 @@ function EmployeeView({
               />
             ) : !activeShift.assignedColleagues.length ? (
               <div className="stack">
-                <h3>Wer hat diese Schicht gearbeitet?</h3>
-                <p className="subtle">Die erste Person muss einmal die Kolleginnen und Kollegen dieser Schicht auswählen.</p>
-                <div className="roster-grid">
-                  {colleagues.map((colleague) => {
-                    const selected = selectedRosterIds.includes(colleague._id);
-                    return (
-                      <button
-                        key={colleague._id}
-                        className={`roster-chip ${selected ? 'selected' : ''}`}
-                        onClick={() =>
-                          setSelectedRosterIds((current) =>
-                            selected ? current.filter((id) => id !== colleague._id) : [...current, colleague._id]
-                          )
-                        }
-                      >
-                        {colleague.name}
-                      </button>
-                    );
-                  })}
+                <div className="compact-action-bar">
+                  <button
+                    type="button"
+                    className={`mini-button ${employeePanel === 'roster' ? 'selected' : ''}`}
+                    onClick={() => setEmployeePanel('roster')}
+                  >
+                    Wer war da?
+                  </button>
                 </div>
-                <button className="primary-button" onClick={openShiftWithRoster}>Checkliste öffnen</button>
+                {employeePanel === 'roster' ? (
+                  <>
+                    <p className="subtle">Einmal pro Tag kurz auswählen, wer diese Schicht gearbeitet hat.</p>
+                    <div className="roster-grid">
+                      {colleagues.map((colleague) => {
+                        const selected = selectedRosterIds.includes(colleague._id);
+                        return (
+                          <button
+                            key={colleague._id}
+                            className={`roster-chip ${selected ? 'selected' : ''}`}
+                            onClick={() =>
+                              setSelectedRosterIds((current) =>
+                                selected ? current.filter((id) => id !== colleague._id) : [...current, colleague._id]
+                              )
+                            }
+                          >
+                            {colleague.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button className="primary-button" onClick={openShiftWithRoster}>Checkliste öffnen</button>
+                  </>
+                ) : null}
               </div>
             ) : (
               <>
-                <UsagePrompt
-                  usageForm={usageForm}
-                  setUsageForm={setUsageForm}
-                  saveShiftUsage={saveShiftUsage}
-                />
-                <section className="task-section">
-                  <div className="panel-header">
-                    <div>
-                      <h3>Zusätzliche Aufgabe für heute</h3>
-                      <p className="subtle">Einträge hier gelten nur für die heutige Checkliste.</p>
-                    </div>
+                <div className="compact-control-strip">
+                  <div className="compact-action-bar">
+                    <button
+                      type="button"
+                      className={`mini-button ${employeePanel === 'task' ? 'selected' : ''}`}
+                      onClick={() => setEmployeePanel('task')}
+                    >
+                      Aufgabe hinzufügen
+                    </button>
+                    <button
+                      type="button"
+                      className={`mini-button ${employeePanel === 'usage' ? 'selected' : ''}`}
+                      onClick={() => setEmployeePanel('usage')}
+                    >
+                      Bereiche
+                    </button>
                   </div>
-                  <form className="stack" onSubmit={addTaskToToday}>
-                    <label>
-                      Aufgabe
+                  <label className="compact-select">
+                    <span>Ich hake ab als</span>
+                    <select
+                      value={activeColleagueName}
+                      onChange={(event) => setActiveColleagueName(event.target.value)}
+                    >
+                      <option value="">Name auswählen</option>
+                      {activeShift.assignedColleagues.map((colleague) => (
+                        <option key={colleague.name} value={colleague.name}>
+                          {colleague.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="subtle">
+                  Gearbeitet heute: {activeShift.assignedColleagues.map((colleague) => colleague.name).join(', ')}
+                </p>
+                {employeePanel === 'usage' ? (
+                  <UsagePrompt
+                    usageForm={usageForm}
+                    setUsageForm={setUsageForm}
+                    saveShiftUsage={saveShiftUsage}
+                  />
+                ) : null}
+                {employeePanel === 'task' ? (
+                  <section className="task-section compact-task-entry">
+                    <form className="inline-form-grid" onSubmit={addTaskToToday}>
                       <input
                         value={dailyTaskForm.title}
+                        placeholder="Neue Aufgabe für heute"
                         onChange={(event) =>
                           setDailyTaskForm((current) => ({
                             ...current,
@@ -947,9 +1069,6 @@ function EmployeeView({
                           }))
                         }
                       />
-                    </label>
-                    <label>
-                      Bereich
                       <select
                         value={dailyTaskForm.section}
                         onChange={(event) =>
@@ -964,42 +1083,25 @@ function EmployeeView({
                           <option key={option.value || 'none'} value={option.value}>{option.label}</option>
                         ))}
                       </select>
-                    </label>
-                    <button
-                      type="button"
-                      className={`roster-chip ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
-                      onClick={() =>
-                        setDailyTaskForm((current) => ({
-                          ...current,
-                          source: 'one_time',
-                          needsPhoto: !current.needsPhoto,
-                        }))
-                      }
-                    >
-                      {dailyTaskForm.needsPhoto ? 'Foto beim Erledigen erforderlich' : 'Kein Foto erforderlich'}
-                    </button>
-                    <button type="submit" className="primary-button">
-                      Für heute hinzufügen
-                    </button>
-                  </form>
-                </section>
-                <label>
-                  Ich hake ab als
-                  <select
-                    value={activeColleagueName}
-                    onChange={(event) => setActiveColleagueName(event.target.value)}
-                  >
-                    <option value="">Name auswählen</option>
-                    {activeShift.assignedColleagues.map((colleague) => (
-                      <option key={colleague.name} value={colleague.name}>
-                        {colleague.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="subtle">
-                  Gearbeitet heute: {activeShift.assignedColleagues.map((colleague) => colleague.name).join(', ')}
-                </p>
+                      <button
+                        type="button"
+                        className={`mini-button ${dailyTaskForm.needsPhoto ? 'selected' : ''}`}
+                        onClick={() =>
+                          setDailyTaskForm((current) => ({
+                            ...current,
+                            source: 'one_time',
+                            needsPhoto: !current.needsPhoto,
+                          }))
+                        }
+                      >
+                        Foto
+                      </button>
+                      <button type="submit" className="primary-button">
+                        Hinzufügen
+                      </button>
+                    </form>
+                  </section>
+                ) : null}
                 <ChecklistSections
                   groupedTasks={groupedActiveTasks}
                   onToggle={(task) => toggleTask(activeShift._id, task, !task.completed)}
@@ -1459,8 +1561,22 @@ function TemplateSection({ section, templates, setTemplateForm, deleteTemplate }
   );
 }
 
+// eslint-disable-next-line no-unused-vars
 function HistoryView({ shifts }) {
   const [expandedIds, setExpandedIds] = useState([]);
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all',
+    shiftType: 'all',
+    completion: 'all',
+    from: '',
+    to: '',
+  });
+
+  const filteredShifts = useMemo(
+    () => shifts.filter((shift) => matchesShiftFilters(shift, filters)),
+    [shifts, filters]
+  );
 
   function toggleDetails(id) {
     setExpandedIds((current) =>
@@ -1470,9 +1586,16 @@ function HistoryView({ shifts }) {
 
   return (
     <section className="panel">
-      <h2>Historie und Status</h2>
+      <div className="panel-header">
+        <div>
+          <h2>Historie und Status</h2>
+          <p className="subtle">Filtere nach Zeitraum, Status, Checklistenart und Inhalt.</p>
+        </div>
+        <span className="pill">{filteredShifts.length} Einträge</span>
+      </div>
+      <ShiftFilterBar filters={filters} setFilters={setFilters} />
       <div className="history-grid">
-        {shifts.map((shift) => {
+        {filteredShifts.map((shift) => {
           const expanded = expandedIds.includes(shift._id);
           const visibleTasks = (shift.checklist || []).filter((task) => task.included !== false).length;
           const totalTasks = (shift.checklist || []).length;
@@ -1601,6 +1724,7 @@ function ReportsView({ reports }) {
   );
 }
 
+// eslint-disable-next-line no-unused-vars
 function OwnerView({ shifts, reports }) {
   return (
     <div className="dashboard-grid">
@@ -1636,6 +1760,152 @@ function OwnerView({ shifts, reports }) {
             </article>
           ))}
         </div>
+      </section>
+    </div>
+  );
+}
+
+function ShiftChecklistDetails({ shift }) {
+  const groupedTasks = groupTasks(shift.checklist || []);
+  const visibleTasks = (shift.checklist || []).filter((task) => task.included !== false).length;
+  const totalTasks = (shift.checklist || []).length;
+
+  return (
+    <div className="stack shift-detail-stack">
+      <div className="detail-summary-grid">
+        <div className="task-section">
+          <strong>Bereichsnutzung</strong>
+          <p className="subtle">Unten: {shift.areaUsage?.untenUsed ? 'Ja' : 'Nein'}</p>
+          <p className="subtle">Biergarten: {shift.areaUsage?.biergartenUsed ? 'Ja' : 'Nein'}</p>
+        </div>
+        <div className="task-section">
+          <strong>Aufgabenstatus</strong>
+          <p className="subtle">Sichtbare Aufgaben: {visibleTasks}</p>
+          <p className="subtle">Gesamtaufgaben: {totalTasks}</p>
+        </div>
+      </div>
+      <ChecklistSections groupedTasks={groupedTasks} onToggle={() => {}} disableToggle />
+    </div>
+  );
+}
+
+function ShiftExplorer({ shifts }) {
+  const [expandedIds, setExpandedIds] = useState([]);
+
+  function toggleDetails(id) {
+    setExpandedIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    );
+  }
+
+  if (!shifts.length) {
+    return <p className="subtle">Keine Einträge für diese Filter gefunden.</p>;
+  }
+
+  return (
+    <div className="history-grid">
+      {shifts.map((shift) => {
+        const expanded = expandedIds.includes(shift._id);
+        const assigned = shift.assignedColleagues.map((person) => person.name).join(', ') || 'Noch offen';
+
+        return (
+          <article key={shift._id} className={`history-card ${expanded ? 'expanded' : ''}`}>
+            <div className="panel-header">
+              <div>
+                <strong>{formatShiftLabel(shift.shiftType)}</strong>
+                <p>{shift.date}</p>
+              </div>
+              <span className="pill">{shift.status}</span>
+            </div>
+            <p>{shift.completionRate}% erledigt</p>
+            <p>Kollegen: {assigned}</p>
+            <div className="inline-actions history-actions">
+              <button type="button" className="ghost-button" onClick={() => toggleDetails(shift._id)}>
+                {expanded ? 'Liste schließen' : 'Checkliste öffnen'}
+              </button>
+            </div>
+            {expanded ? <ShiftChecklistDetails shift={shift} /> : null}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function FilteredHistoryView({ shifts }) {
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all',
+    shiftType: 'all',
+    completion: 'all',
+    from: '',
+    to: '',
+  });
+
+  const filteredShifts = useMemo(
+    () => shifts.filter((shift) => matchesShiftFilters(shift, filters)),
+    [shifts, filters]
+  );
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>Historie und Status</h2>
+          <p className="subtle">Filtere nach Zeitraum, Status, Checklistenart und Inhalt.</p>
+        </div>
+        <span className="pill">{filteredShifts.length} Einträge</span>
+      </div>
+      <ShiftFilterBar filters={filters} setFilters={setFilters} />
+      <ShiftExplorer shifts={filteredShifts} />
+    </section>
+  );
+}
+
+function FilteredOwnerView({ shifts, reports }) {
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all',
+    shiftType: 'all',
+    completion: 'all',
+    from: '',
+    to: '',
+  });
+
+  const filteredShifts = useMemo(
+    () => shifts.filter((shift) => matchesShiftFilters(shift, filters)),
+    [shifts, filters]
+  );
+
+  return (
+    <div className="dashboard-grid">
+      <section className="panel">
+        <h2>Übersicht</h2>
+        <p className="subtle">
+          Hier siehst du den Gesamtstatus der sichtbaren Checklisten.
+        </p>
+        <div className="stats-grid">
+          <article>
+            <strong>{filteredShifts.length}</strong>
+            <span>Checklisten in aktueller Ansicht</span>
+          </article>
+          <article>
+            <strong>{reports?.employeeActivity?.length || 0}</strong>
+            <span>Erfasste Kollegen</span>
+          </article>
+        </div>
+      </section>
+
+      <section className="panel wide-panel">
+        <div className="panel-header">
+          <div>
+            <h2>Sichtbare Checklisten</h2>
+            <p className="subtle">Öffne jede Liste direkt aus der Übersicht.</p>
+          </div>
+          <span className="pill">{filteredShifts.length} sichtbar</span>
+        </div>
+        <ShiftFilterBar filters={filters} setFilters={setFilters} />
+        <ShiftExplorer shifts={filteredShifts} />
       </section>
     </div>
   );

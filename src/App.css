@@ -271,6 +271,77 @@ select {
   margin-top: 8px;
 }
 
+.compact-control-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.compact-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mini-button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.mini-button.selected {
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.16), rgba(255, 255, 255, 0.96));
+  border-color: rgba(15, 118, 110, 0.4);
+}
+
+.compact-select {
+  display: grid;
+  gap: 6px;
+}
+
+.compact-select span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.compact-task-entry {
+  padding: 14px;
+}
+
+.inline-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(120px, 0.8fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 16px 0 20px;
+}
+
+.history-actions {
+  margin-top: 14px;
+}
+
+.shift-detail-stack {
+  margin-top: 16px;
+}
+
+.detail-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
 .task-proof-badge {
   display: inline-flex;
   align-items: center;
@@ -361,6 +432,12 @@ select {
   }
 
   .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-control-strip,
+  .inline-form-grid,
+  .filter-grid {
     grid-template-columns: 1fr;
   }
 }
