@@ -64,12 +64,31 @@ const ROUTE_ACCESS = {
 };
 
 function getTodayBerlin() {
-  return new Intl.DateTimeFormat('en-CA', {
+  const berlinParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Berlin',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date());
+    hour: '2-digit',
+    hourCycle: 'h23',
+  })
+    .formatToParts(new Date())
+    .reduce((accumulator, part) => {
+      if (part.type !== 'literal') {
+        accumulator[part.type] = part.value;
+      }
+      return accumulator;
+    }, {});
+
+  const currentDate = `${berlinParts.year}-${berlinParts.month}-${berlinParts.day}`;
+  const currentHour = Number(berlinParts.hour || '0');
+  if (currentHour >= 5) {
+    return currentDate;
+  }
+
+  const previousDate = new Date(`${currentDate}T12:00:00Z`);
+  previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+  return previousDate.toISOString().slice(0, 10);
 }
 
 function authHeaders(token) {
