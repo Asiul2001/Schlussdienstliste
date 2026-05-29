@@ -586,6 +586,30 @@ select {
   align-items: center;
 }
 
+.task-list .task-row.template-frequency-occasional {
+  border-color: rgba(180, 35, 24, 0.4);
+  background: linear-gradient(135deg, rgba(180, 35, 24, 0.18), rgba(255, 255, 255, 0.92));
+  box-shadow: inset 4px 0 0 rgba(180, 35, 24, 0.45);
+}
+
+.task-list .task-row.template-frequency-scheduled {
+  border-color: rgba(202, 138, 4, 0.4);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.2), rgba(255, 255, 255, 0.92));
+  box-shadow: inset 4px 0 0 rgba(202, 138, 4, 0.45);
+}
+
+.task-list .task-row.template-frequency-interval {
+  border-color: rgba(234, 88, 12, 0.42);
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(255, 255, 255, 0.92));
+  box-shadow: inset 4px 0 0 rgba(234, 88, 12, 0.5);
+}
+
+.task-list .task-row.template-frequency-daily {
+  border-color: rgba(37, 99, 235, 0.34);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(255, 255, 255, 0.92));
+  box-shadow: inset 4px 0 0 rgba(37, 99, 235, 0.4);
+}
+
 .checkbox-indicator {
   min-width: 72px;
   text-align: center;
