@@ -237,6 +237,25 @@ function sortTemplates(templates, sortBy) {
   return items;
 }
 
+function getTemplateFrequencyVisual(category) {
+  if (category === 'occasional') {
+    return {
+      className: 'template-frequency-occasional',
+      label: 'Gelegentlich',
+    };
+  }
+  if (category === 'selected_days' || category === 'interval_weeks') {
+    return {
+      className: 'template-frequency-scheduled',
+      label: category === 'interval_weeks' ? 'Alle x Wochen' : 'Tag-spezifisch',
+    };
+  }
+  return {
+    className: 'template-frequency-daily',
+    label: 'Täglich',
+  };
+}
+
 function toggleScheduleDay(days, day) {
   return days.includes(day) ? days.filter((entry) => entry !== day) : [...days, day].sort((a, b) => a - b);
 }
@@ -2152,6 +2171,56 @@ function TemplateFilterBar({ filters, setFilters }) {
   );
 }
 
+function ColoredTemplateSection({ section, templates, setTemplateForm, deleteTemplate }) {
+  const [isOpen, setIsOpen] = useState(true);
+
+  return (
+    <section className="task-section">
+      <button className="task-row" onClick={() => setIsOpen((current) => !current)}>
+        <div>
+          <strong>{section}</strong>
+          <p>{templates.length} Aufgaben</p>
+        </div>
+        <span className="checkbox-indicator">{isOpen ? 'Zuklappen' : 'Aufklappen'}</span>
+      </button>
+
+      {isOpen ? (
+        <div className="template-list" style={{ marginTop: '12px' }}>
+          {templates.map((template) => {
+            const frequencyCategory = getTemplateFrequencyCategory(template);
+            const frequencyVisual = getTemplateFrequencyVisual(frequencyCategory);
+
+            return (
+              <article key={template._id} className={`template-row ${frequencyVisual.className}`}>
+                <div className="template-row-content">
+                  <strong>{template.title}</strong>
+                  <div className="template-badge-row">
+                    <span className={`template-frequency-badge ${frequencyVisual.className}`}>{frequencyVisual.label}</span>
+                    {template.needsPhoto ? <span className="template-frequency-badge template-photo-badge">Foto erforderlich</span> : null}
+                  </div>
+                  <p>{formatTemplateScheduleHint(template)}</p>
+                </div>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => setTemplateForm(template)}
+                  >
+                    Bearbeiten
+                  </button>
+                  <button type="button" className="danger-button" onClick={() => deleteTemplate(template._id)}>
+                    Löschen
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function EnhancedTemplateView({ templates, templateForm, setTemplateForm, submitTemplate, deleteTemplate }) {
   const [filters, setFilters] = useState({
     search: '',
@@ -2360,7 +2429,7 @@ function EnhancedTemplateView({ templates, templateForm, setTemplateForm, submit
         <TemplateFilterBar filters={filters} setFilters={setFilters} />
         <div className="template-list">
           {sectionEntries.map(([section, sectionTemplates]) => (
-            <TemplateSection
+            <ColoredTemplateSection
               key={section}
               section={section}
               templates={sectionTemplates}
