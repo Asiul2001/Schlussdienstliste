@@ -811,8 +811,12 @@ app.post('/api/shifts/:id/tasks', authenticate, async (req, res, next) => {
       section: template.section,
       requiredArea: template.requiredArea || '',
       needsPhoto: Boolean(template.needsPhoto),
-      scheduleType: template.scheduleType || SCHEDULE_TYPES.DAILY,
+      scheduleType: template.templateType === TEMPLATE_TYPES.OCCASIONAL
+        ? SCHEDULE_TYPES.NEVER_DIRECT
+        : (template.scheduleType || SCHEDULE_TYPES.DAILY),
       scheduleDays: template.scheduleDays || [],
+      recurrenceIntervalWeeks: template.recurrenceIntervalWeeks || 2,
+      recurrenceAnchorDate: template.recurrenceAnchorDate || '',
       weekdays: template.weekdays || [],
       included: true,
       manual: true,
