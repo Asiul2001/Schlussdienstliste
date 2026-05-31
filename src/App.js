@@ -328,7 +328,7 @@ function App() {
     source: 'pool',
     templateId: '',
     title: '',
-    section: '',
+    section: 'Oben',
     needsPhoto: false,
   });
   const [assignmentForm, setAssignmentForm] = useState({
@@ -643,12 +643,16 @@ function App() {
         authHeaders(token)
       );
       setShifts((current) => current.map((shift) => (shift._id === data._id ? data : shift)));
-      setMessage(dailyTaskForm.source === 'pool' ? 'Aufgabe aus dem Pool für heute hinzugefügt.' : 'Einmalige Aufgabe für heute hinzugefügt.');
+      setMessage(
+        dailyTaskForm.source === 'pool'
+          ? 'Aufgabe aus dem Pool für heute hinzugefügt.'
+          : `Einmalige Aufgabe für heute in ${dailyTaskForm.section || 'Allgemein'} hinzugefügt.`
+      );
       setDailyTaskForm({
         source: 'pool',
         templateId: '',
         title: '',
-        section: '',
+        section: 'Oben',
         needsPhoto: false,
       });
     } catch (error) {

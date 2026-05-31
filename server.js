@@ -860,7 +860,7 @@ app.post('/api/shifts/:id/tasks', authenticate, async (req, res, next) => {
   return res.status(201).json(sanitizeShift(shift));
 });
 
-app.post('/api/shifts/:id/tasks', authenticate, async (req, res) => {
+app.post('/api/shifts/:id/tasks-legacy', authenticate, async (req, res) => {
   const shift = await Shift.findById(req.params.id);
   if (!shift) {
     return res.status(404).json({ error: 'Checkliste nicht gefunden' });
