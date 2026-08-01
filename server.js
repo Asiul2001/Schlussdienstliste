@@ -208,6 +208,7 @@ const checklistTaskSchema = new mongoose.Schema(
     templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'TaskTemplate' },
     title: { type: String, required: true, trim: true },
     section: { type: String, required: true, trim: true },
+    manual: { type: Boolean, default: false },
     requiredArea: { type: String, default: '' },
     scheduleType: { type: String, default: SCHEDULE_TYPES.DAILY },
     scheduleDays: { type: [Number], default: [] },
@@ -400,13 +401,23 @@ function refreshShiftChecklist(shift) {
 }
 
 function buildChecklistFromTemplates(templateDocs, existingShift) {
+  const existingManualTasks = (existingShift?.checklist || [])
+    .filter((task) => task.manual)
+    .map((task) => {
+      const record = task.toObject?.() || task;
+      return {
+        ...record,
+        included: record.included !== false,
+      };
+    });
+
   const existingByTemplate = new Map(
     (existingShift?.checklist || [])
       .filter((task) => task.templateId)
       .map((task) => [task.templateId.toString(), task])
   );
 
-  return templateDocs.map((template) => {
+  const templateTasks = templateDocs.map((template) => {
     const existingTask = existingByTemplate.get(template._id.toString());
     const included = existingTask
       ? existingTask.included
@@ -450,6 +461,8 @@ function buildChecklistFromTemplates(templateDocs, existingShift) {
       completionHistory: [],
     };
   });
+
+  return [...templateTasks, ...existingManualTasks];
 }
 
 async function seedDefaults() {
@@ -477,6 +490,58 @@ async function seedDefaults() {
         updatedBy: 'system',
       }))
     );
+  }
+}
+
+async function repairLegacyManualTasks() {
+  const shifts = await Shift.find({
+    checklist: {
+      $elemMatch: {
+        $or: [
+          { scheduleType: SCHEDULE_TYPES.NEVER_DIRECT },
+          { templateId: { $exists: false } },
+        ],
+      },
+    },
+  });
+
+  let repairedShiftCount = 0;
+  let repairedTaskCount = 0;
+
+  for (const shift of shifts) {
+    let shiftChanged = false;
+
+    shift.checklist = shift.checklist.map((task) => {
+      const record = task.toObject?.() || task;
+      const shouldBeManual = record.manual !== true
+        && (
+          record.scheduleType === SCHEDULE_TYPES.NEVER_DIRECT
+          || !record.templateId
+        );
+
+      if (!shouldBeManual) {
+        return record;
+      }
+
+      shiftChanged = true;
+      repairedTaskCount += 1;
+
+      return {
+        ...record,
+        manual: true,
+        included: true,
+      };
+    });
+
+    if (shiftChanged) {
+      repairedShiftCount += 1;
+      shift.markModified('checklist');
+      await shift.save();
+    }
+  }
+
+  if (repairedTaskCount > 0) {
+    console.log(`Repaired ${repairedTaskCount} legacy manual tasks across ${repairedShiftCount} shifts`);
   }
 }
 
@@ -527,6 +592,7 @@ mongoose
   .connect(MONGODB_URI)
   .then(async () => {
     await seedDefaults();
+    await repairLegacyManualTasks();
     console.log('MongoDB connected successfully');
   })
   .catch((error) => {
