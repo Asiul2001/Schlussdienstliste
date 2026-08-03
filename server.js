@@ -16,6 +16,10 @@ const PORT = Number(process.env.PORT || 5001);
 const HOST = process.env.HOST || '::';
 const JWT_SECRET = process.env.JWT_SECRET || 'restaurant-checklist-secret';
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/checklist';
+const MONGO_CONNECT_TIMEOUT_MS = Number(process.env.MONGO_CONNECT_TIMEOUT_MS || 10000);
+const MONGO_RETRY_DELAY_MS = Number(process.env.MONGO_RETRY_DELAY_MS || 15000);
+
+mongoose.set('bufferCommands', false);
 
 const io = new Server(server, {
   cors: {
@@ -151,8 +155,18 @@ app.use(express.json({ limit: '15mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({
-    ok: true,
+    ok: mongoose.connection.readyState === 1,
     mongoReadyState: mongoose.connection.readyState,
+  });
+});
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health' || mongoose.connection.readyState === 1) {
+    return next();
+  }
+
+  return res.status(503).json({
+    error: 'Die Datenbank verbindet sich gerade neu. Bitte in ein paar Sekunden erneut laden.',
   });
 });
 
@@ -731,19 +745,78 @@ async function updateShiftStatus(shift) {
   return shift;
 }
 
-mongoose
-  .connect(MONGODB_URI)
-  .then(async () => {
-    await seedDefaults();
-    await migrateRoles();
-    await syncManagedUserAccounts();
-    await repairLegacyManualTasks();
-    console.log('MongoDB connected successfully');
-  })
-  .catch((error) => {
-    console.error('Error connecting to MongoDB:', error);
-    process.exit(1);
-  });
+let mongoBootstrapCompleted = false;
+let mongoConnectInFlight = null;
+let mongoRetryTimer = null;
+
+async function bootstrapMongoData() {
+  if (mongoBootstrapCompleted) {
+    return;
+  }
+
+  await seedDefaults();
+  await migrateRoles();
+  await syncManagedUserAccounts();
+  await repairLegacyManualTasks();
+  mongoBootstrapCompleted = true;
+}
+
+function scheduleMongoReconnect(reason) {
+  if (mongoRetryTimer || mongoConnectInFlight) {
+    return;
+  }
+
+  console.warn(`MongoDB unavailable (${reason}). Retrying in ${MONGO_RETRY_DELAY_MS / 1000}s...`);
+  mongoRetryTimer = setTimeout(() => {
+    mongoRetryTimer = null;
+    connectToMongo().catch(() => {});
+  }, MONGO_RETRY_DELAY_MS);
+}
+
+async function connectToMongo() {
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
+  }
+
+  if (mongoConnectInFlight) {
+    return mongoConnectInFlight;
+  }
+
+  mongoConnectInFlight = mongoose
+    .connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
+    })
+    .then(async () => {
+      if (mongoRetryTimer) {
+        clearTimeout(mongoRetryTimer);
+        mongoRetryTimer = null;
+      }
+
+      await bootstrapMongoData();
+      console.log('MongoDB connected successfully');
+      return mongoose.connection;
+    })
+    .catch((error) => {
+      console.error('Error connecting to MongoDB:', error.message);
+      scheduleMongoReconnect('initial connection failed');
+      throw error;
+    })
+    .finally(() => {
+      mongoConnectInFlight = null;
+    });
+
+  return mongoConnectInFlight;
+}
+
+mongoose.connection.on('disconnected', () => {
+  scheduleMongoReconnect('connection dropped');
+});
+
+mongoose.connection.on('error', (error) => {
+  console.error('MongoDB connection error:', error.message);
+});
+
+connectToMongo().catch(() => {});
 
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
