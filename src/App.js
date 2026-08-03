@@ -137,6 +137,10 @@ function formatRoleLabel(role) {
   return COLLEAGUE_ROLE_OPTIONS.find((option) => option.value === role)?.label || 'Normaler Mitarbeiter';
 }
 
+function getColleagueByName(colleagues, name) {
+  return colleagues.find((colleague) => colleague.name === name) || null;
+}
+
 function groupTasks(tasks) {
   return tasks
     .filter((task) => task.included !== false)
@@ -344,7 +348,9 @@ function App() {
   const [activeShiftId, setActiveShiftId] = useState('');
   const [selectedRosterIds, setSelectedRosterIds] = useState([]);
   const [activeColleagueName, setActiveColleagueName] = useState('');
+  const [employeeLeadName, setEmployeeLeadName] = useState('');
   const [newColleagueName, setNewColleagueName] = useState('');
+  const [userAccounts, setUserAccounts] = useState([]);
   const [usageForm, setUsageForm] = useState({ untenUsed: null, biergartenUsed: null });
   const [templateForm, setTemplateForm] = useState(getFreshTemplateForm);
   const [dailyTaskForm, setDailyTaskForm] = useState({
@@ -383,8 +389,16 @@ function App() {
       if (hasMinimumRole(role, 'manager')) {
         requests.push(axios.get(`${API_BASE}/reports/overview`, authHeaders(token)));
       }
+      if (hasMinimumRole(role, 'head_manager')) {
+        requests.push(axios.get(`${API_BASE}/users`, authHeaders(token)));
+      }
 
-      const [colleagueResponse, shiftResponse, templateResponse, reportResponse] = await Promise.all(requests);
+      const responses = await Promise.all(requests);
+      const [colleagueResponse, shiftResponse, templateResponse] = responses;
+      const reportResponse = hasMinimumRole(role, 'manager') ? responses[3] : null;
+      const usersResponse = hasMinimumRole(role, 'head_manager')
+        ? responses[hasMinimumRole(role, 'manager') ? 4 : 3]
+        : null;
 
       setColleagues(colleagueResponse.data);
       setShifts(shiftResponse.data);
@@ -396,6 +410,11 @@ function App() {
 
       if (reportResponse) {
         setReports(reportResponse.data);
+      }
+      if (usersResponse) {
+        setUserAccounts(usersResponse.data);
+      } else {
+        setUserAccounts([]);
       }
     } catch (error) {
       setMessage(error.response?.data?.error || 'Daten konnten gerade nicht geladen werden.');
@@ -504,6 +523,10 @@ function App() {
   const usageIsRequired = user?.role === 'employee'
     && activeShift
     && (typeof activeShift.areaUsage?.untenUsed !== 'boolean' || typeof activeShift.areaUsage?.biergartenUsed !== 'boolean');
+  const employeeLead = getColleagueByName(colleagues, employeeLeadName);
+  const activeActingColleague = getColleagueByName(colleagues, activeColleagueName);
+  const employeeCanManageDay = hasMinimumRole(activeActingColleague?.role || employeeLead?.role, 'shift_lead');
+  const shiftLeadOptions = colleagues.filter((colleague) => hasMinimumRole(colleague.role, 'shift_lead') && colleague.active);
 
   function defaultRouteForRole(role) {
     if (role === 'employee') {
@@ -526,8 +549,10 @@ function App() {
     setTemplates([]);
     setShifts([]);
     setReports(null);
+    setUserAccounts([]);
     setActiveShiftId('');
     setActiveColleagueName('');
+    setEmployeeLeadName('');
     setSelectedRosterIds([]);
     window.location.hash = '#/login';
   }
@@ -595,6 +620,20 @@ function App() {
     }
   }
 
+  async function updateUserPassword(userAccount, password) {
+    try {
+      const { data } = await axios.put(
+        `${API_BASE}/users/${userAccount._id}`,
+        { password },
+        authHeaders(token)
+      );
+      setUserAccounts((current) => current.map((item) => (item._id === data._id ? data : item)));
+      setMessage(`Passwort für ${data.displayName} gespeichert.`);
+    } catch (error) {
+      setMessage(error.response?.data?.error || 'Passwort konnte nicht aktualisiert werden.');
+    }
+  }
+
   async function submitTemplate(event) {
     event.preventDefault();
     const scheduleType = templateForm.templateType === 'occasional' ? 'never_direct' : templateForm.scheduleType;
@@ -647,8 +686,13 @@ function App() {
   async function assignShiftChecklist(event) {
     event.preventDefault();
 
+    const payload = {
+      ...assignmentForm,
+      ...(user?.role === 'employee' ? { actingColleagueName: employeeLeadName } : {}),
+    };
+
     try {
-      const { data } = await axios.post(`${API_BASE}/shifts`, assignmentForm, authHeaders(token));
+      const { data } = await axios.post(`${API_BASE}/shifts`, payload, authHeaders(token));
       setShifts((current) => {
         const filtered = current.filter((shift) => !(shift.date === data.date && shift.shiftType === data.shiftType));
         return [...filtered, data].sort((a, b) => a.shiftType.localeCompare(b.shiftType));
@@ -667,12 +711,17 @@ function App() {
     }
 
     const payload = dailyTaskForm.source === 'pool'
-      ? { source: 'pool', templateId: dailyTaskForm.templateId }
+      ? {
+          source: 'pool',
+          templateId: dailyTaskForm.templateId,
+          ...(user?.role === 'employee' ? { actingColleagueName: activeColleagueName || employeeLeadName } : {}),
+        }
         : {
             source: 'one_time',
           title: dailyTaskForm.title,
           section: dailyTaskForm.section || 'Kein Bereich',
           needsPhoto: dailyTaskForm.needsPhoto,
+          ...(user?.role === 'employee' ? { actingColleagueName: activeColleagueName || employeeLeadName } : {}),
         };
 
     try {
@@ -707,7 +756,10 @@ function App() {
     try {
       const { data } = await axios.put(
         `${API_BASE}/shifts/${activeShift._id}/usage`,
-        usageForm,
+        {
+          ...usageForm,
+          ...(user?.role === 'employee' ? { actingColleagueName: activeColleagueName || employeeLeadName } : {}),
+        },
         authHeaders(token)
       );
       setShifts((current) => current.map((shift) => (shift._id === data._id ? data : shift)));
@@ -721,7 +773,10 @@ function App() {
     try {
       const { data } = await axios.put(
         `${API_BASE}/shifts/${shiftId}/roster`,
-        { colleagueIds },
+        {
+          colleagueIds,
+          ...(user?.role === 'employee' ? { actingColleagueName: activeColleagueName || employeeLeadName } : {}),
+        },
         authHeaders(token)
       );
       setShifts((current) => current.map((shift) => (shift._id === data._id ? data : shift)));
@@ -739,7 +794,10 @@ function App() {
     try {
       const { data } = await axios.post(
         `${API_BASE}/shifts/${activeShift._id}/open`,
-        { colleagueIds: selectedRosterIds },
+        {
+          colleagueIds: selectedRosterIds,
+          ...(user?.role === 'employee' ? { actingColleagueName: employeeLeadName } : {}),
+        },
         authHeaders(token)
       );
       setShifts((current) => current.map((shift) => (shift._id === data._id ? data : shift)));
@@ -894,6 +952,11 @@ function App() {
           groupedActiveTasks={groupedActiveTasks}
           templates={templates}
           colleagues={colleagues.filter((colleague) => colleague.active)}
+          employeeLeadName={employeeLeadName}
+          setEmployeeLeadName={setEmployeeLeadName}
+          employeeCanManageDay={employeeCanManageDay}
+          shiftLeadOptions={shiftLeadOptions}
+          assignShiftChecklist={assignShiftChecklist}
           selectedRosterIds={selectedRosterIds}
           setSelectedRosterIds={setSelectedRosterIds}
           activeColleagueName={activeColleagueName}
@@ -951,14 +1014,19 @@ function App() {
       {route === '#/historie' ? <FilteredHistoryView shifts={shifts} /> : null}
 
       {route === '#/kollegen' && canManageColleagues ? (
-        <TeamView
-          colleagues={colleagues}
-          newColleagueName={newColleagueName}
-          setNewColleagueName={setNewColleagueName}
-          createColleague={createColleague}
-          toggleColleagueStatus={toggleColleagueStatus}
-          updateColleagueRole={updateColleagueRole}
-        />
+        <>
+          <TeamView
+            colleagues={colleagues}
+            userAccounts={userAccounts}
+            newColleagueName={newColleagueName}
+            setNewColleagueName={setNewColleagueName}
+            createColleague={createColleague}
+            toggleColleagueStatus={toggleColleagueStatus}
+            updateColleagueRole={updateColleagueRole}
+            updateUserPassword={updateUserPassword}
+          />
+          <UserAccountsPanel userAccounts={userAccounts} updateUserPassword={updateUserPassword} />
+        </>
       ) : null}
 
       {route === '#/berichte' && canViewReports ? <ReportsView reports={reports} /> : null}
@@ -1260,6 +1328,11 @@ function EmployeeView({
   groupedActiveTasks,
   templates,
   colleagues,
+  employeeLeadName,
+  setEmployeeLeadName,
+  employeeCanManageDay,
+  shiftLeadOptions,
+  assignShiftChecklist,
   selectedRosterIds,
   setSelectedRosterIds,
   activeColleagueName,
@@ -1295,6 +1368,20 @@ function EmployeeView({
       <section className="panel">
         <h2>Für heute ist noch keine Checkliste angelegt.</h2>
         <p className="subtle">Sobald die Tagescheckliste angelegt wurde, erscheint sie hier automatisch.</p>
+        <div className="stack" style={{ marginTop: '16px' }}>
+          <label className="compact-select">
+            <span>Verantwortliche Schichtleitung</span>
+            <select value={employeeLeadName} onChange={(event) => setEmployeeLeadName(event.target.value)}>
+              <option value="">Bitte Schichtleitung auswählen</option>
+              {shiftLeadOptions.map((colleague) => (
+                <option key={colleague._id} value={colleague.name}>{colleague.name}</option>
+              ))}
+            </select>
+          </label>
+          <button className="primary-button" onClick={assignShiftChecklist} disabled={!employeeLeadName}>
+            Heutige Checkliste erstellen
+          </button>
+        </div>
       </section>
     );
   }
@@ -1347,6 +1434,15 @@ function EmployeeView({
                 {employeePanel === 'roster' ? (
                   <>
                     <p className="subtle">Einmal pro Tag kurz auswählen, wer diese Schicht gearbeitet hat.</p>
+                    <label className="compact-select">
+                      <span>Schichtleitung</span>
+                      <select value={employeeLeadName} onChange={(event) => setEmployeeLeadName(event.target.value)}>
+                        <option value="">Bitte Schichtleitung auswählen</option>
+                        {shiftLeadOptions.map((colleague) => (
+                          <option key={colleague._id} value={colleague.name}>{colleague.name}</option>
+                        ))}
+                      </select>
+                    </label>
                     <div className="roster-grid">
                       {colleagues.map((colleague) => {
                         const selected = selectedRosterIds.includes(colleague._id);
@@ -2136,6 +2232,47 @@ function TeamView({ colleagues, newColleagueName, setNewColleagueName, createCol
         </div>
       </section>
     </div>
+  );
+}
+
+function UserPasswordEditor({ account, updateUserPassword }) {
+  const [password, setPassword] = useState(account.password || '');
+
+  useEffect(() => {
+    setPassword(account.password || '');
+  }, [account.password]);
+
+  return (
+    <div className="inline-actions">
+      <input
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        placeholder="Passwort"
+      />
+      <button className="ghost-button" onClick={() => updateUserPassword(account, password)}>
+        Speichern
+      </button>
+    </div>
+  );
+}
+
+function UserAccountsPanel({ userAccounts, updateUserPassword }) {
+  return (
+    <section className="panel">
+      <h2>Zugänge ohne Mitarbeiter</h2>
+      <p className="subtle">Hier siehst und änderst du die Passwörter für alle außer dem allgemeinen Mitarbeiter-Zugang.</p>
+      <div className="template-list">
+        {userAccounts.map((account) => (
+          <article key={account._id} className="template-row">
+            <div>
+              <strong>{account.displayName}</strong>
+              <p>{account.username} · {formatRoleLabel(account.role)}</p>
+            </div>
+            <UserPasswordEditor account={account} updateUserPassword={updateUserPassword} />
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

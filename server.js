@@ -350,6 +350,31 @@ function hasMinimumRole(role, minimumRole) {
   return (ROLE_PRIORITY[normalizeRole(role)] ?? -1) >= (ROLE_PRIORITY[minimumRole] ?? Number.MAX_SAFE_INTEGER);
 }
 
+async function resolveEmployeeLead(req) {
+  if (normalizeRole(req.user?.role) !== ROLES.EMPLOYEE) {
+    return null;
+  }
+
+  const actingColleagueName = typeof req.body?.actingColleagueName === 'string'
+    ? req.body.actingColleagueName.trim()
+    : '';
+
+  if (!actingColleagueName) {
+    return { error: 'Bitte eine verantwortliche Schichtleitung auswählen.' };
+  }
+
+  const colleague = await Colleague.findOne({ name: actingColleagueName, active: true }).lean();
+  if (!colleague) {
+    return { error: 'Die ausgewählte Schichtleitung wurde nicht gefunden.' };
+  }
+
+  if (!hasMinimumRole(colleague.role, ROLES.SHIFT_LEAD)) {
+    return { error: 'Nur Schichtleiter oder höher dürfen diesen Schritt im Mitarbeiter-Zugang ausführen.' };
+  }
+
+  return colleague;
+}
+
 function isTaskIncluded(shift, taskLike) {
   const weekday = getWeekdayNumber(shift.date);
   const fallbackWeekdays = Array.isArray(taskLike.weekdays) ? taskLike.weekdays : [];
@@ -701,6 +726,50 @@ app.get('/api/colleagues', authenticate, async (_req, res) => {
   return res.json(colleagues);
 });
 
+app.get('/api/users', authenticate, requireRole(ROLES.HEAD_MANAGER), async (_req, res) => {
+  const users = await User.find().sort({ displayName: 1, username: 1 }).lean();
+  return res.json(
+    users
+      .filter((user) => normalizeRole(user.role) !== ROLES.EMPLOYEE)
+      .map((user) => ({
+        _id: user._id,
+        username: user.username,
+        displayName: user.displayName,
+        role: normalizeRole(user.role),
+        password: user.password,
+      }))
+  );
+});
+
+app.put('/api/users/:id', authenticate, requireRole(ROLES.HEAD_MANAGER), async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  }
+
+  if (normalizeRole(user.role) === ROLES.EMPLOYEE) {
+    return res.status(403).json({ error: 'Das Mitarbeiter-Passwort kann hier nicht bearbeitet werden.' });
+  }
+
+  if (typeof req.body.password === 'string') {
+    const nextPassword = req.body.password.trim();
+    if (!nextPassword) {
+      return res.status(400).json({ error: 'Passwort darf nicht leer sein.' });
+    }
+    user.password = nextPassword;
+  }
+
+  await user.save();
+
+  return res.json({
+    _id: user._id,
+    username: user.username,
+    displayName: user.displayName,
+    role: normalizeRole(user.role),
+    password: user.password,
+  });
+});
+
 app.post('/api/colleagues', authenticate, requireRole(ROLES.HEAD_MANAGER), async (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) {
@@ -873,6 +942,15 @@ app.get('/api/shifts', authenticate, async (req, res) => {
 
 app.post('/api/shifts', authenticate, requireRole(ROLES.SHIFT_LEAD), async (req, res) => {
   const { date, shiftType, templateIds } = req.body;
+  if (normalizeRole(req.user.role) === ROLES.EMPLOYEE) {
+    const actingLead = await resolveEmployeeLead(req);
+    if (actingLead?.error) {
+      return res.status(403).json({ error: actingLead.error });
+    }
+    if (date !== getBerlinDateString()) {
+      return res.status(403).json({ error: 'Im Mitarbeiter-Zugang kann nur die heutige Checkliste erstellt werden.' });
+    }
+  }
 
   if (!date || !shiftType) {
     return res.status(400).json({ error: 'Datum und Checklistenart sind erforderlich' });
@@ -913,6 +991,13 @@ app.post('/api/shifts/:id/tasks', authenticate, async (req, res, next) => {
   }
 
   const { source, templateId, title, section } = req.body;
+  const employeeLead = normalizeRole(req.user.role) === ROLES.EMPLOYEE
+    ? await resolveEmployeeLead(req)
+    : null;
+
+  if (employeeLead?.error) {
+    return res.status(403).json({ error: employeeLead.error });
+  }
 
   if (source === 'pool') {
     if (req.user.role === ROLES.EMPLOYEE && shift.date !== getBerlinDateString()) {
@@ -920,6 +1005,9 @@ app.post('/api/shifts/:id/tasks', authenticate, async (req, res, next) => {
     }
     if (!hasMinimumRole(req.user.role, ROLES.SHIFT_LEAD) && req.user.role !== ROLES.EMPLOYEE) {
       return res.status(403).json({ error: 'Diese Rolle darf keine Pool-Aufgaben hinzufügen.' });
+    }
+    if (normalizeRole(req.user.role) === ROLES.EMPLOYEE && !employeeLead) {
+      return res.status(403).json({ error: 'Nur Schichtleiter oder höher dürfen Aufgaben hinzufügen.' });
     }
     if (!templateId) {
       return res.status(400).json({ error: 'Bitte eine Aufgabe aus dem Pool auswählen' });
@@ -959,6 +1047,9 @@ app.post('/api/shifts/:id/tasks', authenticate, async (req, res, next) => {
   } else if (source === 'one_time') {
     if (req.user.role === ROLES.EMPLOYEE && shift.date !== getBerlinDateString()) {
       return res.status(403).json({ error: 'Zusätzliche Aufgaben können nur für die heutige Checkliste angelegt werden.' });
+    }
+    if (normalizeRole(req.user.role) === ROLES.EMPLOYEE && !employeeLead) {
+      return res.status(403).json({ error: 'Nur Schichtleiter oder höher dürfen Aufgaben hinzufügen.' });
     }
     if (!title || !title.trim() || !section || !section.trim()) {
       return res.status(400).json({ error: 'Bitte Titel und Bereich für die einmalige Aufgabe angeben' });
@@ -1078,6 +1169,12 @@ app.put('/api/shifts/:id/usage', authenticate, async (req, res) => {
     return res.status(403).json({ error: 'Mitarbeiter dürfen nur die heutige Checkliste bearbeiten' });
   }
 
+  if (normalizeRole(req.user.role) === ROLES.EMPLOYEE) {
+    const actingLead = await resolveEmployeeLead(req);
+    if (actingLead?.error) {
+      return res.status(403).json({ error: actingLead.error });
+    }
+  }
   if (typeof req.body.untenUsed !== 'boolean' || typeof req.body.biergartenUsed !== 'boolean') {
     return res.status(400).json({ error: 'Bitte unten und Biergarten jeweils mit Ja oder Nein beantworten' });
   }
@@ -1100,6 +1197,12 @@ app.put('/api/shifts/:id/roster', authenticate, requireRole(ROLES.SHIFT_LEAD), a
     return res.status(404).json({ error: 'Checkliste nicht gefunden' });
   }
 
+  if (normalizeRole(req.user.role) === ROLES.EMPLOYEE) {
+    const actingLead = await resolveEmployeeLead(req);
+    if (actingLead?.error) {
+      return res.status(403).json({ error: actingLead.error });
+    }
+  }
   const colleagues = await Colleague.find({ _id: { $in: req.body.colleagueIds || [] } }).lean();
   shift.assignedColleagues = colleagues.map((colleague) => ({
     colleagueId: colleague._id,
@@ -1124,6 +1227,12 @@ app.post('/api/shifts/:id/open', authenticate, async (req, res) => {
   }
 
   if (!shift.assignedColleagues.length) {
+    if (normalizeRole(req.user.role) === ROLES.EMPLOYEE) {
+      const actingLead = await resolveEmployeeLead(req);
+      if (actingLead?.error) {
+        return res.status(403).json({ error: actingLead.error });
+      }
+    }
     const colleagueIds = req.body.colleagueIds || [];
     if (!Array.isArray(colleagueIds) || !colleagueIds.length) {
       return res.status(400).json({ error: 'Die erste Person muss markieren, wer diese Schicht gearbeitet hat' });
