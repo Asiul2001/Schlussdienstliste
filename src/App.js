@@ -2189,23 +2189,25 @@ function LegacyTeamView({ colleagues, newColleagueName, setNewColleagueName, cre
 
 function TeamView({ colleagues, userAccounts, newColleagueName, setNewColleagueName, createColleague, toggleColleagueStatus, updateColleagueRole, updateUserPassword }) {
   return (
-    <div className="dashboard-grid colleague-grid">
-      <section className="panel colleague-create-panel">
-        <h2>Kollege anlegen</h2>
-        <form className="stack" onSubmit={createColleague}>
-          <label>
-            Name
-            <input
-              value={newColleagueName}
-              onChange={(event) => setNewColleagueName(event.target.value)}
-              placeholder="Name eingeben"
-            />
-          </label>
-          <button type="submit" className="primary-button">Kollegen hinzufügen</button>
-        </form>
-      </section>
+    <div className="stack colleague-page">
+      <div className="dashboard-grid colleague-top-grid">
+        <section className="panel colleague-create-panel">
+          <h2>Kollege anlegen</h2>
+          <form className="stack" onSubmit={createColleague}>
+            <label>
+              Name
+              <input
+                value={newColleagueName}
+                onChange={(event) => setNewColleagueName(event.target.value)}
+                placeholder="Name eingeben"
+              />
+            </label>
+            <button type="submit" className="primary-button">Kollegen hinzufügen</button>
+          </form>
+        </section>
 
-      <UserAccountsPanel userAccounts={userAccounts} updateUserPassword={updateUserPassword} />
+        <UserAccountsPanel userAccounts={userAccounts} updateUserPassword={updateUserPassword} />
+      </div>
 
       <section className="panel wide-panel colleague-roles-panel">
         <h2>Kollegenrollen</h2>

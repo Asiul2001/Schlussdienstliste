@@ -572,17 +572,19 @@ select {
   align-items: center;
 }
 
-.colleague-grid {
-  align-items: start;
-}
-
+.colleague-page,
+.colleague-top-grid,
 .colleague-accounts-panel,
 .colleague-roles-panel {
   min-width: 0;
 }
 
-.colleague-roles-panel {
-  grid-column: 1 / -1;
+.colleague-top-grid {
+  align-items: start;
+}
+
+.colleague-page {
+  gap: 18px;
 }
 
 .colleague-row,
@@ -600,6 +602,10 @@ select {
 .account-password-editor {
   flex: 0 1 420px;
   width: min(100%, 420px);
+}
+
+.colleague-row-actions {
+  justify-content: flex-end;
 }
 
 .colleague-row-actions select,
@@ -724,10 +730,6 @@ select {
 
   .compact-choice-row .mini-button {
     flex: 1 1 0;
-  }
-
-  .colleague-roles-panel {
-    grid-column: auto;
   }
 
   .colleague-row-actions,
