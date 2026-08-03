@@ -614,6 +614,10 @@ function App() {
         authHeaders(token)
       );
       setColleagues((current) => current.map((item) => (item._id === data._id ? data : item)));
+      if (hasMinimumRole(user?.role, 'head_manager')) {
+        const usersResponse = await axios.get(`${API_BASE}/users`, authHeaders(token));
+        setUserAccounts(usersResponse.data);
+      }
       setMessage(`Rolle für ${data.name} gespeichert.`);
     } catch (error) {
       setMessage(error.response?.data?.error || 'Rolle konnte nicht aktualisiert werden.');
