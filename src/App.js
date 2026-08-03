@@ -2189,8 +2189,8 @@ function LegacyTeamView({ colleagues, newColleagueName, setNewColleagueName, cre
 
 function TeamView({ colleagues, userAccounts, newColleagueName, setNewColleagueName, createColleague, toggleColleagueStatus, updateColleagueRole, updateUserPassword }) {
   return (
-    <div className="dashboard-grid">
-      <section className="panel">
+    <div className="dashboard-grid colleague-grid">
+      <section className="panel colleague-create-panel">
         <h2>Kollege anlegen</h2>
         <form className="stack" onSubmit={createColleague}>
           <label>
@@ -2207,17 +2207,17 @@ function TeamView({ colleagues, userAccounts, newColleagueName, setNewColleagueN
 
       <UserAccountsPanel userAccounts={userAccounts} updateUserPassword={updateUserPassword} />
 
-      <section className="panel wide-panel">
+      <section className="panel wide-panel colleague-roles-panel">
         <h2>Kollegenrollen</h2>
         <p className="subtle">Hier vergibst du die vier Etiketten für das Team.</p>
         <div className="template-list">
           {colleagues.map((colleague) => (
-            <article key={colleague._id} className="template-row">
+            <article key={colleague._id} className="template-row colleague-row">
               <div>
                 <strong>{colleague.name}</strong>
                 <p>{formatRoleLabel(colleague.role)} · {colleague.active ? 'Aktiv für Schichtauswahl' : 'Deaktiviert'}</p>
               </div>
-              <div className="inline-actions">
+              <div className="inline-actions colleague-row-actions">
                 <select
                   value={colleague.role || 'employee'}
                   onChange={(event) => updateColleagueRole(colleague, event.target.value)}
@@ -2246,7 +2246,7 @@ function UserPasswordEditor({ account, updateUserPassword }) {
   }, [account.password]);
 
   return (
-    <div className="inline-actions">
+    <div className="inline-actions account-password-editor">
       <input
         value={password}
         onChange={(event) => setPassword(event.target.value)}
@@ -2261,12 +2261,12 @@ function UserPasswordEditor({ account, updateUserPassword }) {
 
 function UserAccountsPanel({ userAccounts, updateUserPassword }) {
   return (
-    <section className="panel">
+    <section className="panel colleague-accounts-panel">
       <h2>Zugänge ohne Mitarbeiter</h2>
       <p className="subtle">Hier siehst und änderst du die Passwörter für alle außer dem allgemeinen Mitarbeiter-Zugang.</p>
       <div className="template-list">
         {userAccounts.map((account) => (
-          <article key={account._id} className="template-row">
+          <article key={account._id} className="template-row account-row">
             <div>
               <strong>{account.displayName}</strong>
               <p>{account.username} · {formatRoleLabel(account.role)}</p>

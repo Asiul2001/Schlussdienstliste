@@ -572,6 +572,52 @@ select {
   align-items: center;
 }
 
+.colleague-grid {
+  align-items: start;
+}
+
+.colleague-accounts-panel,
+.colleague-roles-panel {
+  min-width: 0;
+}
+
+.colleague-roles-panel {
+  grid-column: 1 / -1;
+}
+
+.colleague-row,
+.account-row {
+  align-items: center;
+}
+
+.colleague-row > div:first-child,
+.account-row > div:first-child {
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.colleague-row-actions,
+.account-password-editor {
+  flex: 0 1 420px;
+  width: min(100%, 420px);
+}
+
+.colleague-row-actions select,
+.colleague-row-actions button,
+.account-password-editor input,
+.account-password-editor button {
+  min-width: 0;
+}
+
+.account-password-editor input {
+  flex: 1 1 0;
+}
+
+.account-password-editor button,
+.colleague-row-actions button {
+  white-space: nowrap;
+}
+
 .task-section {
   padding: 18px;
   border-radius: 24px;
@@ -678,5 +724,15 @@ select {
 
   .compact-choice-row .mini-button {
     flex: 1 1 0;
+  }
+
+  .colleague-roles-panel {
+    grid-column: auto;
+  }
+
+  .colleague-row-actions,
+  .account-password-editor {
+    width: 100%;
+    flex-basis: auto;
   }
 }
