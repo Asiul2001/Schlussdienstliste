@@ -4,6 +4,8 @@ import { io } from 'socket.io-client';
 import './App.css';
 
 const API_BASE = `${window.location.origin}/api`;
+axios.defaults.timeout = 15000;
+
 const socket = io(window.location.origin, {
   transports: ['websocket', 'polling'],
 });
@@ -77,6 +79,14 @@ const ROUTE_ACCESS = {
   '#/vorlagen': ['head_manager'],
   '#/berichte': ['manager', 'head_manager'],
 };
+
+function shouldLoadReports(route, role) {
+  return hasMinimumRole(role, 'manager') && ['#/berichte', '#/owner'].includes(route);
+}
+
+function shouldLoadUserAccounts(route, role) {
+  return hasMinimumRole(role, 'head_manager') && route === '#/kollegen';
+}
 
 function getTodayBerlin() {
   const berlinParts = new Intl.DateTimeFormat('en-CA', {
@@ -375,46 +385,74 @@ function App() {
   const canViewReports = hasMinimumRole(user?.role, 'manager');
   const businessDayLabel = formatBusinessDayLabel(selectedDate);
 
-  const loadDashboardData = useCallback(async (role, date) => {
+  const loadDashboardData = useCallback(async (role, date, currentRoute) => {
     setLoadingData(true);
 
     try {
-      const requests = [
-        axios.get(`${API_BASE}/colleagues`, authHeaders(token)),
-        axios.get(`${API_BASE}/shifts?date=${date}`, authHeaders(token)),
+      const requestEntries = [
+        { key: 'colleagues', required: true, request: axios.get(`${API_BASE}/colleagues`, authHeaders(token)) },
+        { key: 'shifts', required: true, request: axios.get(`${API_BASE}/shifts?date=${date}`, authHeaders(token)) },
+        { key: 'templates', required: true, request: axios.get(`${API_BASE}/templates`, authHeaders(token)) },
       ];
 
-      requests.push(axios.get(`${API_BASE}/templates`, authHeaders(token)));
-
-      if (hasMinimumRole(role, 'manager')) {
-        requests.push(axios.get(`${API_BASE}/reports/overview`, authHeaders(token)));
-      }
-      if (hasMinimumRole(role, 'head_manager')) {
-        requests.push(axios.get(`${API_BASE}/users`, authHeaders(token)));
-      }
-
-      const responses = await Promise.all(requests);
-      const [colleagueResponse, shiftResponse, templateResponse] = responses;
-      const reportResponse = hasMinimumRole(role, 'manager') ? responses[3] : null;
-      const usersResponse = hasMinimumRole(role, 'head_manager')
-        ? responses[hasMinimumRole(role, 'manager') ? 4 : 3]
-        : null;
-
-      setColleagues(colleagueResponse.data);
-      setShifts(shiftResponse.data);
-      setActiveShiftId((current) => current || shiftResponse.data[0]?._id || '');
-
-      if (templateResponse) {
-        setTemplates(templateResponse.data);
+      if (shouldLoadReports(currentRoute, role)) {
+        requestEntries.push({
+          key: 'reports',
+          required: false,
+          request: axios.get(`${API_BASE}/reports/overview`, authHeaders(token)),
+        });
       }
 
-      if (reportResponse) {
-        setReports(reportResponse.data);
+      if (shouldLoadUserAccounts(currentRoute, role)) {
+        requestEntries.push({
+          key: 'users',
+          required: false,
+          request: axios.get(`${API_BASE}/users`, authHeaders(token)),
+        });
       }
-      if (usersResponse) {
-        setUserAccounts(usersResponse.data);
+
+      const settled = await Promise.allSettled(requestEntries.map((entry) => entry.request));
+      const results = requestEntries.reduce((accumulator, entry, index) => {
+        accumulator[entry.key] = settled[index];
+        return accumulator;
+      }, {});
+
+      if (results.colleagues?.status === 'fulfilled') {
+        setColleagues(results.colleagues.value.data);
+      }
+
+      if (results.shifts?.status === 'fulfilled') {
+        setShifts(results.shifts.value.data);
+        setActiveShiftId((current) => current || results.shifts.value.data[0]?._id || '');
       } else {
+        setShifts([]);
+        setActiveShiftId('');
+      }
+
+      if (results.templates?.status === 'fulfilled') {
+        setTemplates(results.templates.value.data);
+      }
+
+      if (results.reports?.status === 'fulfilled') {
+        setReports(results.reports.value.data);
+      } else if (!shouldLoadReports(currentRoute, role)) {
+        setReports(null);
+      }
+
+      if (results.users?.status === 'fulfilled') {
+        setUserAccounts(results.users.value.data);
+      } else if (!shouldLoadUserAccounts(currentRoute, role)) {
         setUserAccounts([]);
+      }
+
+      const failedRequired = requestEntries.filter((entry) => entry.required && results[entry.key]?.status === 'rejected');
+      const failedOptional = requestEntries.filter((entry) => !entry.required && results[entry.key]?.status === 'rejected');
+
+      if (failedRequired.length > 0) {
+        const firstError = results[failedRequired[0].key]?.reason;
+        setMessage(firstError?.response?.data?.error || 'Ein Teil der Daten konnte nicht geladen werden. Bitte kurz neu laden.');
+      } else if (failedOptional.length > 0) {
+        setMessage('Einige Zusatzdaten laden gerade nicht. Die wichtigsten Bereiche sollten trotzdem funktionieren.');
       }
     } catch (error) {
       setMessage(error.response?.data?.error || 'Daten konnten gerade nicht geladen werden.');
@@ -458,8 +496,8 @@ function App() {
       return;
     }
 
-    loadDashboardData(user.role, selectedDate);
-  }, [loadDashboardData, selectedDate, token, user]);
+    loadDashboardData(user.role, selectedDate, route);
+  }, [loadDashboardData, route, selectedDate, token, user]);
 
   useEffect(() => {
     socket.on('shiftUpdated', (incomingShift) => {
