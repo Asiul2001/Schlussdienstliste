@@ -350,6 +350,67 @@ function hasMinimumRole(role, minimumRole) {
   return (ROLE_PRIORITY[normalizeRole(role)] ?? -1) >= (ROLE_PRIORITY[minimumRole] ?? Number.MAX_SAFE_INTEGER);
 }
 
+function buildUsernameFromName(name) {
+  const base = (name || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 20);
+
+  return base || `user${Date.now()}`;
+}
+
+async function ensureManagedUserAccountForColleague(colleague) {
+  const normalizedRole = normalizeRole(colleague.role);
+  if (!hasMinimumRole(normalizedRole, ROLES.SHIFT_LEAD)) {
+    return null;
+  }
+
+  let user = await User.findOne({ displayName: colleague.name });
+  if (!user) {
+    const baseUsername = buildUsernameFromName(colleague.name);
+    let username = baseUsername;
+    let suffix = 1;
+
+    while (await User.findOne({ username })) {
+      suffix += 1;
+      username = `${baseUsername}${suffix}`;
+    }
+
+    user = await User.create({
+      username,
+      password: 'temp1234',
+      displayName: colleague.name,
+      role: normalizedRole,
+    });
+    return user;
+  }
+
+  let changed = false;
+  if (user.role !== normalizedRole) {
+    user.role = normalizedRole;
+    changed = true;
+  }
+  if (user.displayName !== colleague.name) {
+    user.displayName = colleague.name;
+    changed = true;
+  }
+
+  if (changed) {
+    await user.save();
+  }
+
+  return user;
+}
+
+async function syncManagedUserAccounts() {
+  const colleagues = await Colleague.find();
+  for (const colleague of colleagues) {
+    await ensureManagedUserAccountForColleague(colleague);
+  }
+}
+
 async function resolveEmployeeLead(req) {
   if (normalizeRole(req.user?.role) !== ROLES.EMPLOYEE) {
     return null;
@@ -675,6 +736,7 @@ mongoose
   .then(async () => {
     await seedDefaults();
     await migrateRoles();
+    await syncManagedUserAccounts();
     await repairLegacyManualTasks();
     console.log('MongoDB connected successfully');
   })
@@ -789,6 +851,8 @@ app.post('/api/colleagues', authenticate, requireRole(ROLES.HEAD_MANAGER), async
     updatedBy: req.user.displayName,
   });
 
+  await ensureManagedUserAccountForColleague(colleague);
+
   return res.status(201).json(colleague);
 });
 
@@ -808,6 +872,8 @@ app.put('/api/colleagues/:id', authenticate, requireRole(ROLES.HEAD_MANAGER), as
   if (!updated) {
     return res.status(404).json({ error: 'Kollege nicht gefunden' });
   }
+
+  await ensureManagedUserAccountForColleague(updated);
 
   return res.json(updated);
 });

@@ -1014,19 +1014,16 @@ function App() {
       {route === '#/historie' ? <FilteredHistoryView shifts={shifts} /> : null}
 
       {route === '#/kollegen' && canManageColleagues ? (
-        <>
-          <TeamView
-            colleagues={colleagues}
-            userAccounts={userAccounts}
-            newColleagueName={newColleagueName}
-            setNewColleagueName={setNewColleagueName}
-            createColleague={createColleague}
-            toggleColleagueStatus={toggleColleagueStatus}
-            updateColleagueRole={updateColleagueRole}
-            updateUserPassword={updateUserPassword}
-          />
-          <UserAccountsPanel userAccounts={userAccounts} updateUserPassword={updateUserPassword} />
-        </>
+        <TeamView
+          colleagues={colleagues}
+          userAccounts={userAccounts}
+          newColleagueName={newColleagueName}
+          setNewColleagueName={setNewColleagueName}
+          createColleague={createColleague}
+          toggleColleagueStatus={toggleColleagueStatus}
+          updateColleagueRole={updateColleagueRole}
+          updateUserPassword={updateUserPassword}
+        />
       ) : null}
 
       {route === '#/berichte' && canViewReports ? <ReportsView reports={reports} /> : null}
@@ -2186,7 +2183,7 @@ function LegacyTeamView({ colleagues, newColleagueName, setNewColleagueName, cre
   );
 }
 
-function TeamView({ colleagues, newColleagueName, setNewColleagueName, createColleague, toggleColleagueStatus, updateColleagueRole }) {
+function TeamView({ colleagues, userAccounts, newColleagueName, setNewColleagueName, createColleague, toggleColleagueStatus, updateColleagueRole, updateUserPassword }) {
   return (
     <div className="dashboard-grid">
       <section className="panel">
@@ -2203,6 +2200,8 @@ function TeamView({ colleagues, newColleagueName, setNewColleagueName, createCol
           <button type="submit" className="primary-button">Kollegen hinzufügen</button>
         </form>
       </section>
+
+      <UserAccountsPanel userAccounts={userAccounts} updateUserPassword={updateUserPassword} />
 
       <section className="panel wide-panel">
         <h2>Kollegenrollen</h2>
