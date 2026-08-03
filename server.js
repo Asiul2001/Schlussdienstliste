@@ -26,8 +26,16 @@ const io = new Server(server, {
 
 const ROLES = {
   EMPLOYEE: 'employee',
-  GENERAL_MANAGER: 'general_manager',
-  OWNER: 'owner',
+  SHIFT_LEAD: 'shift_lead',
+  MANAGER: 'manager',
+  HEAD_MANAGER: 'head_manager',
+};
+
+const ROLE_PRIORITY = {
+  [ROLES.EMPLOYEE]: 0,
+  [ROLES.SHIFT_LEAD]: 1,
+  [ROLES.MANAGER]: 2,
+  [ROLES.HEAD_MANAGER]: 3,
 };
 
 const AREA_KEYS = {
@@ -58,13 +66,13 @@ const DEFAULT_USERS = [
     username: 'Luisa',
     password: '2569',
     displayName: 'Luisa',
-    role: ROLES.GENERAL_MANAGER,
+    role: ROLES.HEAD_MANAGER,
   },
   {
     username: 'Fitzi',
     password: '0032',
     displayName: 'Fitzi',
-    role: ROLES.OWNER,
+    role: ROLES.MANAGER,
   },
 ];
 
@@ -165,6 +173,7 @@ const userSchema = new mongoose.Schema(
 const colleagueSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, unique: true, trim: true },
+    role: { type: String, enum: Object.values(ROLES), default: ROLES.EMPLOYEE },
     active: { type: Boolean, default: true },
     createdBy: { type: String, default: '' },
     updatedBy: { type: String, default: '' },
@@ -320,11 +329,25 @@ function createToken(user) {
       sub: user._id.toString(),
       username: user.username,
       displayName: user.displayName,
-      role: user.role,
+      role: normalizeRole(user.role),
     },
     JWT_SECRET,
     { expiresIn: '12h' }
   );
+}
+
+function normalizeRole(role) {
+  if (role === 'general_manager') {
+    return ROLES.HEAD_MANAGER;
+  }
+  if (role === 'owner') {
+    return ROLES.MANAGER;
+  }
+  return Object.values(ROLES).includes(role) ? role : ROLES.EMPLOYEE;
+}
+
+function hasMinimumRole(role, minimumRole) {
+  return (ROLE_PRIORITY[normalizeRole(role)] ?? -1) >= (ROLE_PRIORITY[minimumRole] ?? Number.MAX_SAFE_INTEGER);
 }
 
 function isTaskIncluded(shift, taskLike) {
@@ -466,16 +489,19 @@ function buildChecklistFromTemplates(templateDocs, existingShift) {
 }
 
 async function seedDefaults() {
-  const userCount = await User.countDocuments();
-  if (userCount === 0) {
-    await User.insertMany(DEFAULT_USERS);
+  for (const defaultUser of DEFAULT_USERS) {
+    await User.findOneAndUpdate(
+      { username: defaultUser.username },
+      defaultUser,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
   }
 
   const colleagueCount = await Colleague.countDocuments();
   if (colleagueCount === 0) {
     await Colleague.insertMany([
-      { name: 'Luisa', createdBy: 'system', updatedBy: 'system' },
-      { name: 'Fitzi', createdBy: 'system', updatedBy: 'system' },
+      { name: 'Luisa', role: ROLES.HEAD_MANAGER, createdBy: 'system', updatedBy: 'system' },
+      { name: 'Fitzi', role: ROLES.MANAGER, createdBy: 'system', updatedBy: 'system' },
     ]);
   }
 
@@ -491,6 +517,37 @@ async function seedDefaults() {
       }))
     );
   }
+}
+
+async function migrateRoles() {
+  const users = await User.find();
+  for (const user of users) {
+    const nextRole = normalizeRole(user.role);
+    if (user.role !== nextRole) {
+      user.role = nextRole;
+      await user.save();
+    }
+  }
+
+  const colleagues = await Colleague.find();
+  for (const colleague of colleagues) {
+    const nextRole = normalizeRole(colleague.role);
+    if (colleague.role !== nextRole) {
+      colleague.role = nextRole;
+      await colleague.save();
+    }
+  }
+
+  await Colleague.findOneAndUpdate(
+    { name: 'Luisa' },
+    { role: ROLES.HEAD_MANAGER, updatedBy: 'system' },
+    { new: true }
+  );
+  await Colleague.findOneAndUpdate(
+    { name: 'Fitzi' },
+    { role: ROLES.MANAGER, updatedBy: 'system' },
+    { new: true }
+  );
 }
 
 async function repairLegacyManualTasks() {
@@ -563,7 +620,7 @@ function authenticate(req, res, next) {
 
 function requireRole(...allowedRoles) {
   return (req, res, next) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
+    if (!req.user || !allowedRoles.some((role) => hasMinimumRole(req.user.role, role))) {
       return res.status(403).json({ error: 'Keine Berechtigung für diese Aktion' });
     }
     return next();
@@ -592,6 +649,7 @@ mongoose
   .connect(MONGODB_URI)
   .then(async () => {
     await seedDefaults();
+    await migrateRoles();
     await repairLegacyManualTasks();
     console.log('MongoDB connected successfully');
   })
@@ -617,7 +675,7 @@ app.post('/api/login', async (req, res) => {
     user: {
       username: user.username,
       displayName: user.displayName,
-      role: user.role,
+      role: normalizeRole(user.role),
     },
   });
 });
@@ -632,7 +690,7 @@ app.get('/api/session', authenticate, async (req, res) => {
     user: {
       username: user.username,
       displayName: user.displayName,
-      role: user.role,
+      role: normalizeRole(user.role),
     },
     today: getBerlinDateString(),
   });
@@ -643,7 +701,7 @@ app.get('/api/colleagues', authenticate, async (_req, res) => {
   return res.json(colleagues);
 });
 
-app.post('/api/colleagues', authenticate, requireRole(ROLES.GENERAL_MANAGER, ROLES.OWNER), async (req, res) => {
+app.post('/api/colleagues', authenticate, requireRole(ROLES.HEAD_MANAGER), async (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Name ist erforderlich' });
@@ -657,6 +715,7 @@ app.post('/api/colleagues', authenticate, requireRole(ROLES.GENERAL_MANAGER, ROL
 
   const colleague = await Colleague.create({
     name: normalizedName,
+    role: normalizeRole(req.body.role),
     createdBy: req.user.displayName,
     updatedBy: req.user.displayName,
   });
@@ -664,10 +723,13 @@ app.post('/api/colleagues', authenticate, requireRole(ROLES.GENERAL_MANAGER, ROL
   return res.status(201).json(colleague);
 });
 
-app.put('/api/colleagues/:id', authenticate, requireRole(ROLES.GENERAL_MANAGER, ROLES.OWNER), async (req, res) => {
+app.put('/api/colleagues/:id', authenticate, requireRole(ROLES.HEAD_MANAGER), async (req, res) => {
   const payload = { updatedBy: req.user.displayName };
   if (typeof req.body.name === 'string' && req.body.name.trim()) {
     payload.name = req.body.name.trim();
+  }
+  if (typeof req.body.role === 'string') {
+    payload.role = normalizeRole(req.body.role);
   }
   if (typeof req.body.active === 'boolean') {
     payload.active = req.body.active;
@@ -687,7 +749,7 @@ app.get('/api/templates', authenticate, async (req, res) => {
   return res.json(templates);
 });
 
-app.post('/api/templates', authenticate, requireRole(ROLES.GENERAL_MANAGER), async (req, res) => {
+app.post('/api/templates', authenticate, requireRole(ROLES.HEAD_MANAGER), async (req, res) => {
   const { title, section, shiftType, requiredArea, weekdays, templateType, scheduleType, scheduleDays, recurrenceIntervalWeeks, needsPhoto } = req.body;
 
   if (![title, shiftType].every((value) => typeof value === 'string' && value.trim())) {
@@ -725,7 +787,7 @@ app.post('/api/templates', authenticate, requireRole(ROLES.GENERAL_MANAGER), asy
   return res.status(201).json(template);
 });
 
-app.put('/api/templates/:id', authenticate, requireRole(ROLES.GENERAL_MANAGER), async (req, res) => {
+app.put('/api/templates/:id', authenticate, requireRole(ROLES.HEAD_MANAGER), async (req, res) => {
   const payload = {
     updatedBy: req.user.displayName,
   };
@@ -785,7 +847,7 @@ app.put('/api/templates/:id', authenticate, requireRole(ROLES.GENERAL_MANAGER), 
   return res.json(template);
 });
 
-app.delete('/api/templates/:id', authenticate, requireRole(ROLES.GENERAL_MANAGER), async (req, res) => {
+app.delete('/api/templates/:id', authenticate, requireRole(ROLES.HEAD_MANAGER), async (req, res) => {
   const deleted = await TaskTemplate.findByIdAndDelete(req.params.id);
   if (!deleted) {
     return res.status(404).json({ error: 'Vorlage nicht gefunden' });
@@ -809,7 +871,7 @@ app.get('/api/shifts', authenticate, async (req, res) => {
   return res.json(shifts.map(sanitizeShift));
 });
 
-app.post('/api/shifts', authenticate, requireRole(ROLES.GENERAL_MANAGER), async (req, res) => {
+app.post('/api/shifts', authenticate, requireRole(ROLES.SHIFT_LEAD), async (req, res) => {
   const { date, shiftType, templateIds } = req.body;
 
   if (!date || !shiftType) {
@@ -856,7 +918,7 @@ app.post('/api/shifts/:id/tasks', authenticate, async (req, res, next) => {
     if (req.user.role === ROLES.EMPLOYEE && shift.date !== getBerlinDateString()) {
       return res.status(403).json({ error: 'Pool-Aufgaben können nur für die heutige Checkliste hinzugefügt werden.' });
     }
-    if (req.user.role !== ROLES.GENERAL_MANAGER && req.user.role !== ROLES.EMPLOYEE) {
+    if (!hasMinimumRole(req.user.role, ROLES.SHIFT_LEAD) && req.user.role !== ROLES.EMPLOYEE) {
       return res.status(403).json({ error: 'Diese Rolle darf keine Pool-Aufgaben hinzufügen.' });
     }
     if (!templateId) {
@@ -939,7 +1001,7 @@ app.post('/api/shifts/:id/tasks-legacy', authenticate, async (req, res) => {
   const { source, templateId, title, section } = req.body;
 
   if (source === 'pool') {
-    if (req.user.role !== ROLES.GENERAL_MANAGER) {
+    if (!hasMinimumRole(req.user.role, ROLES.SHIFT_LEAD)) {
       return res.status(403).json({ error: 'Nur die Planung darf Aufgaben aus dem Pool hinzufügen.' });
     }
     if (!templateId) {
@@ -1032,7 +1094,7 @@ app.put('/api/shifts/:id/usage', authenticate, async (req, res) => {
   return res.json(sanitizeShift(shift));
 });
 
-app.put('/api/shifts/:id/roster', authenticate, requireRole(ROLES.GENERAL_MANAGER, ROLES.OWNER), async (req, res) => {
+app.put('/api/shifts/:id/roster', authenticate, requireRole(ROLES.SHIFT_LEAD), async (req, res) => {
   const shift = await Shift.findById(req.params.id);
   if (!shift) {
     return res.status(404).json({ error: 'Checkliste nicht gefunden' });
@@ -1147,7 +1209,7 @@ app.put('/api/shifts/:shiftId/tasks/:taskId', authenticate, async (req, res) => 
   return res.json(sanitizeShift(shift));
 });
 
-app.get('/api/reports/overview', authenticate, requireRole(ROLES.GENERAL_MANAGER, ROLES.OWNER), async (req, res) => {
+app.get('/api/reports/overview', authenticate, requireRole(ROLES.MANAGER), async (req, res) => {
   const from = req.query.from || `${getBerlinDateString().slice(0, 8)}01`;
   const to = req.query.to || getBerlinDateString();
 

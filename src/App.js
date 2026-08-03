@@ -9,9 +9,24 @@ const socket = io(window.location.origin, {
 });
 
 const ROLE_LABELS = {
-  employee: 'Schlussdienstliste',
-  general_manager: 'Schlussdienstliste',
-  owner: 'Schlussdienstliste',
+  employee: 'Mitarbeiter',
+  shift_lead: 'Schichtleiter',
+  manager: 'Manager',
+  head_manager: 'Head Manager',
+};
+
+const COLLEAGUE_ROLE_OPTIONS = [
+  { value: 'employee', label: 'Normaler Mitarbeiter' },
+  { value: 'shift_lead', label: 'Schichtleiter' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'head_manager', label: 'Head Manager' },
+];
+
+const ROLE_PRIORITY = {
+  employee: 0,
+  shift_lead: 1,
+  manager: 2,
+  head_manager: 3,
 };
 
 const SHIFT_OPTIONS = [
@@ -55,12 +70,12 @@ const FREQUENCY_OPTIONS = [
 
 const ROUTE_ACCESS = {
   '#/mitarbeiter': ['employee'],
-  '#/manager': ['general_manager'],
-  '#/owner': ['owner'],
-  '#/historie': ['general_manager', 'owner'],
-  '#/kollegen': ['general_manager', 'owner'],
-  '#/vorlagen': ['general_manager'],
-  '#/berichte': ['owner'],
+  '#/manager': ['shift_lead', 'manager', 'head_manager'],
+  '#/owner': ['manager', 'head_manager'],
+  '#/historie': ['manager', 'head_manager'],
+  '#/kollegen': ['head_manager'],
+  '#/vorlagen': ['head_manager'],
+  '#/berichte': ['manager', 'head_manager'],
 };
 
 function getTodayBerlin() {
@@ -112,6 +127,14 @@ function authHeaders(token) {
       Authorization: `Bearer ${token}`,
     },
   };
+}
+
+function hasMinimumRole(role, minimumRole) {
+  return (ROLE_PRIORITY[role] ?? -1) >= (ROLE_PRIORITY[minimumRole] ?? Number.MAX_SAFE_INTEGER);
+}
+
+function formatRoleLabel(role) {
+  return COLLEAGUE_ROLE_OPTIONS.find((option) => option.value === role)?.label || 'Normaler Mitarbeiter';
 }
 
 function groupTasks(tasks) {
@@ -340,8 +363,10 @@ function App() {
   const [photoUploadPending, setPhotoUploadPending] = useState(false);
   const photoInputRef = useRef(null);
 
-  const canManageOperations = user?.role === 'general_manager';
-  const canManageColleagues = user?.role === 'general_manager' || user?.role === 'owner';
+  const canManageOperations = hasMinimumRole(user?.role, 'shift_lead');
+  const canManageTemplates = hasMinimumRole(user?.role, 'head_manager');
+  const canManageColleagues = hasMinimumRole(user?.role, 'head_manager');
+  const canViewReports = hasMinimumRole(user?.role, 'manager');
   const businessDayLabel = formatBusinessDayLabel(selectedDate);
 
   const loadDashboardData = useCallback(async (role, date) => {
@@ -355,7 +380,7 @@ function App() {
 
       requests.push(axios.get(`${API_BASE}/templates`, authHeaders(token)));
 
-      if (role === 'general_manager' || role === 'owner') {
+      if (hasMinimumRole(role, 'manager')) {
         requests.push(axios.get(`${API_BASE}/reports/overview`, authHeaders(token)));
       }
 
@@ -484,10 +509,10 @@ function App() {
     if (role === 'employee') {
       return '#/mitarbeiter';
     }
-    if (role === 'general_manager') {
+    if (hasMinimumRole(role, 'shift_lead')) {
       return '#/manager';
     }
-    if (role === 'owner') {
+    if (hasMinimumRole(role, 'manager')) {
       return '#/owner';
     }
     return '#/login';
@@ -553,6 +578,20 @@ function App() {
       setColleagues((current) => current.map((item) => (item._id === data._id ? data : item)));
     } catch (error) {
       setMessage(error.response?.data?.error || 'Kollege konnte nicht aktualisiert werden.');
+    }
+  }
+
+  async function updateColleagueRole(colleague, role) {
+    try {
+      const { data } = await axios.put(
+        `${API_BASE}/colleagues/${colleague._id}`,
+        { role },
+        authHeaders(token)
+      );
+      setColleagues((current) => current.map((item) => (item._id === data._id ? data : item)));
+      setMessage(`Rolle für ${data.name} gespeichert.`);
+    } catch (error) {
+      setMessage(error.response?.data?.error || 'Rolle konnte nicht aktualisiert werden.');
     }
   }
 
@@ -836,12 +875,12 @@ function App() {
 
       <nav className="tabbar">
         {user.role === 'employee' ? <a href="#/mitarbeiter">Heute</a> : null}
-        {user.role === 'general_manager' ? <a href="#/manager">Heute</a> : null}
-        {user.role === 'general_manager' ? <a href="#/vorlagen">Aufgabenpool</a> : null}
-        {(user.role === 'general_manager' || user.role === 'owner') ? <a href="#/historie">Historie</a> : null}
-        {(user.role === 'general_manager' || user.role === 'owner') ? <a href="#/kollegen">Kollegen</a> : null}
-        {user.role === 'owner' ? <a href="#/berichte">Berichte</a> : null}
-        {user.role === 'owner' ? <a href="#/owner">Übersicht</a> : null}
+        {hasMinimumRole(user.role, 'shift_lead') ? <a href="#/manager">Heute</a> : null}
+        {canManageTemplates ? <a href="#/vorlagen">Aufgabenpool</a> : null}
+        {canViewReports ? <a href="#/historie">Historie</a> : null}
+        {canManageColleagues ? <a href="#/kollegen">Kollegen</a> : null}
+        {canViewReports ? <a href="#/berichte">Berichte</a> : null}
+        {canViewReports ? <a href="#/owner">Übersicht</a> : null}
       </nav>
 
       {message ? <div className="message-banner">{message}</div> : null}
@@ -873,7 +912,7 @@ function App() {
         />
       ) : null}
 
-      {route === '#/manager' ? (
+      {route === '#/manager' && canManageOperations ? (
         <ManagerView
           shifts={shifts}
           activeShift={activeShift}
@@ -899,7 +938,7 @@ function App() {
         />
       ) : null}
 
-      {route === '#/vorlagen' && canManageOperations ? (
+      {route === '#/vorlagen' && canManageTemplates ? (
         <EnhancedTemplateView
           templates={templates}
           templateForm={templateForm}
@@ -918,11 +957,12 @@ function App() {
           setNewColleagueName={setNewColleagueName}
           createColleague={createColleague}
           toggleColleagueStatus={toggleColleagueStatus}
+          updateColleagueRole={updateColleagueRole}
         />
       ) : null}
 
-      {route === '#/berichte' && user.role === 'owner' ? <ReportsView reports={reports} /> : null}
-      {route === '#/owner' && user.role === 'owner' ? <FilteredOwnerView shifts={shifts} reports={reports} /> : null}
+      {route === '#/berichte' && canViewReports ? <ReportsView reports={reports} /> : null}
+      {route === '#/owner' && canViewReports ? <FilteredOwnerView shifts={shifts} reports={reports} /> : null}
       <input
         ref={photoInputRef}
         type="file"
@@ -2011,7 +2051,8 @@ function HistoryView({ shifts }) {
   );
 }
 
-function TeamView({ colleagues, newColleagueName, setNewColleagueName, createColleague, toggleColleagueStatus }) {
+// eslint-disable-next-line no-unused-vars
+function LegacyTeamView({ colleagues, newColleagueName, setNewColleagueName, createColleague, toggleColleagueStatus, updateColleagueRole }) {
   return (
     <div className="dashboard-grid">
       <section className="panel">
@@ -2041,6 +2082,55 @@ function TeamView({ colleagues, newColleagueName, setNewColleagueName, createCol
               <button className="ghost-button" onClick={() => toggleColleagueStatus(colleague)}>
                 {colleague.active ? 'Deaktivieren' : 'Reaktivieren'}
               </button>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TeamView({ colleagues, newColleagueName, setNewColleagueName, createColleague, toggleColleagueStatus, updateColleagueRole }) {
+  return (
+    <div className="dashboard-grid">
+      <section className="panel">
+        <h2>Kollege anlegen</h2>
+        <form className="stack" onSubmit={createColleague}>
+          <label>
+            Name
+            <input
+              value={newColleagueName}
+              onChange={(event) => setNewColleagueName(event.target.value)}
+              placeholder="Name eingeben"
+            />
+          </label>
+          <button type="submit" className="primary-button">Kollegen hinzufügen</button>
+        </form>
+      </section>
+
+      <section className="panel wide-panel">
+        <h2>Kollegenrollen</h2>
+        <p className="subtle">Hier vergibst du die vier Etiketten für das Team.</p>
+        <div className="template-list">
+          {colleagues.map((colleague) => (
+            <article key={colleague._id} className="template-row">
+              <div>
+                <strong>{colleague.name}</strong>
+                <p>{formatRoleLabel(colleague.role)} · {colleague.active ? 'Aktiv für Schichtauswahl' : 'Deaktiviert'}</p>
+              </div>
+              <div className="inline-actions">
+                <select
+                  value={colleague.role || 'employee'}
+                  onChange={(event) => updateColleagueRole(colleague, event.target.value)}
+                >
+                  {COLLEAGUE_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                <button className="ghost-button" onClick={() => toggleColleagueStatus(colleague)}>
+                  {colleague.active ? 'Deaktivieren' : 'Reaktivieren'}
+                </button>
+              </div>
             </article>
           ))}
         </div>
