@@ -333,6 +333,43 @@ function matchesShiftFilters(shift, filters) {
   return true;
 }
 
+function buildReportsAnalytics(reports) {
+  const shifts = reports?.shifts || [];
+  const totalShifts = reports?.summary?.totalShifts || 0;
+  const completedShifts = reports?.summary?.completedShifts || 0;
+  const activeShifts = reports?.summary?.activeShifts || 0;
+  const draftShifts = Math.max(0, totalShifts - completedShifts - activeShifts);
+  const completionRate = totalShifts ? Math.round((completedShifts / totalShifts) * 100) : 0;
+  const topEmployees = (reports?.employeeActivity || []).slice(0, 8);
+  const maxCompletedTasks = Math.max(...topEmployees.map((entry) => entry.completedTasks), 1);
+
+  const dailyTrend = shifts
+    .slice()
+    .reverse()
+    .slice(-10)
+    .map((shift) => ({
+      id: shift._id,
+      label: new Intl.DateTimeFormat('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        timeZone: 'UTC',
+      }).format(new Date(`${shift.date}T12:00:00Z`)),
+      completionRate: Math.round(shift.completionRate || 0),
+      status: shift.status || 'draft',
+    }));
+
+  return {
+    totalShifts,
+    completedShifts,
+    activeShifts,
+    draftShifts,
+    completionRate,
+    topEmployees,
+    maxCompletedTasks,
+    dailyTrend,
+  };
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1068,7 +1105,7 @@ function App() {
         />
       ) : null}
 
-      {route === '#/berichte' && canViewReports ? <ReportsView reports={reports} /> : null}
+      {route === '#/berichte' && canViewReports ? <GraphReportsView reports={reports} /> : null}
       {route === '#/owner' && canViewReports ? <FilteredOwnerView reports={reports} /> : null}
       <input
         ref={photoInputRef}
@@ -2319,6 +2356,7 @@ function UserAccountsPanel({ userAccounts, updateUserPassword }) {
   );
 }
 
+// eslint-disable-next-line no-unused-vars
 function ReportsView({ reports }) {
   if (!reports) {
     return <section className="panel"><p className="subtle">Berichte werden geladen...</p></section>;
@@ -2356,6 +2394,139 @@ function ReportsView({ reports }) {
               <span className="pill">{entry.lastCompletedAt ? 'Zuletzt aktiv' : 'Noch keine Einträge'}</span>
             </article>
           ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function GraphReportsView({ reports }) {
+  if (!reports) {
+    return <section className="panel"><p className="subtle">Berichte werden geladen...</p></section>;
+  }
+
+  const analytics = buildReportsAnalytics(reports);
+  const statusBreakdown = [
+    { key: 'completed', label: 'Erledigt', value: analytics.completedShifts, className: 'report-segment-completed' },
+    { key: 'active', label: 'Aktiv', value: analytics.activeShifts, className: 'report-segment-active' },
+    { key: 'draft', label: 'Entwurf', value: analytics.draftShifts, className: 'report-segment-draft' },
+  ];
+
+  return (
+    <div className="stack reports-layout">
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>Berichte</h2>
+            <p className="subtle">Ein klarer Blick auf Abschlussquote, Verlauf und Teamaktivität.</p>
+          </div>
+          <span className="pill">{analytics.totalShifts} Listen</span>
+        </div>
+        <div className="stats-grid">
+          <article>
+            <strong>{analytics.totalShifts}</strong>
+            <span>Checklisten gesamt</span>
+          </article>
+          <article>
+            <strong>{analytics.completedShifts}</strong>
+            <span>Vollständig erledigt</span>
+          </article>
+          <article>
+            <strong>{analytics.activeShifts}</strong>
+            <span>Aktiv</span>
+          </article>
+          <article>
+            <strong>{analytics.completionRate}%</strong>
+            <span>Abschlussquote</span>
+          </article>
+        </div>
+      </section>
+
+      <div className="reports-grid">
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>Statusmix</h2>
+              <p className="subtle">So verteilen sich erledigte, aktive und offene Listen.</p>
+            </div>
+            <span className="pill">{analytics.totalShifts} gesamt</span>
+          </div>
+          <div className="report-segment-track" aria-hidden="true">
+            {statusBreakdown.map((segment) => (
+              <div
+                key={segment.key}
+                className={`report-segment ${segment.className}`}
+                style={{ width: `${analytics.totalShifts ? (segment.value / analytics.totalShifts) * 100 : 0}%` }}
+              />
+            ))}
+          </div>
+          <div className="report-legend">
+            {statusBreakdown.map((segment) => (
+              <article key={segment.key} className="report-legend-item">
+                <span className={`report-dot ${segment.className}`} />
+                <div>
+                  <strong>{segment.value}</strong>
+                  <p>{segment.label}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel wide-panel">
+          <div className="panel-header">
+            <div>
+              <h2>Verlauf der letzten Listen</h2>
+              <p className="subtle">Jeder Balken zeigt, wie vollständig eine Liste abgeschlossen wurde.</p>
+            </div>
+            <span className="pill">{analytics.dailyTrend.length} sichtbar</span>
+          </div>
+          <div className="trend-chart">
+            {analytics.dailyTrend.length ? analytics.dailyTrend.map((entry) => (
+              <div key={entry.id} className="trend-bar-group">
+                <div className="trend-bar-shell">
+                  <div
+                    className={`trend-bar trend-${entry.status}`}
+                    style={{ height: `${Math.max(entry.completionRate, 6)}%` }}
+                    title={`${entry.label}: ${entry.completionRate}%`}
+                  />
+                </div>
+                <strong>{entry.completionRate}%</strong>
+                <span>{entry.label}</span>
+              </div>
+            )) : <p className="subtle">Noch keine Checklisten im gewählten Zeitraum.</p>}
+          </div>
+        </section>
+      </div>
+
+      <section className="panel wide-panel">
+        <div className="panel-header">
+          <div>
+            <h2>Mitarbeiteraktivität</h2>
+            <p className="subtle">Wer hat im Zeitraum die meisten Aufgaben erledigt?</p>
+          </div>
+          <span className="pill">{analytics.topEmployees.length} sichtbar</span>
+        </div>
+        <div className="employee-activity-list">
+          {analytics.topEmployees.length ? analytics.topEmployees.map((entry) => (
+            <article key={entry.name} className="employee-activity-row">
+              <div className="employee-activity-copy">
+                <strong>{entry.name}</strong>
+                <p>{entry.completedTasks} Aufgaben erledigt</p>
+              </div>
+              <div className="employee-activity-bar-shell" aria-hidden="true">
+                <div
+                  className="employee-activity-bar"
+                  style={{ width: `${(entry.completedTasks / analytics.maxCompletedTasks) * 100}%` }}
+                />
+              </div>
+              <span className="pill">
+                {entry.lastCompletedAt
+                  ? `Zuletzt ${new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', timeZone: 'UTC' }).format(new Date(entry.lastCompletedAt))}`
+                  : 'Noch keine Einträge'}
+              </span>
+            </article>
+          )) : <p className="subtle">Sobald Aufgaben erledigt werden, erscheint hier ein Aktivitätsvergleich.</p>}
         </div>
       </section>
     </div>
