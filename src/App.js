@@ -81,7 +81,7 @@ const ROUTE_ACCESS = {
 };
 
 function shouldLoadReports(route, role) {
-  return hasMinimumRole(role, 'manager') && ['#/berichte', '#/owner'].includes(route);
+  return hasMinimumRole(role, 'manager') && ['#/berichte', '#/historie', '#/owner'].includes(route);
 }
 
 function shouldLoadUserAccounts(route, role) {
@@ -1053,7 +1053,7 @@ function App() {
         />
       ) : null}
 
-      {route === '#/historie' ? <FilteredHistoryView shifts={shifts} /> : null}
+      {route === '#/historie' ? <FilteredHistoryView reports={reports} /> : null}
 
       {route === '#/kollegen' && canManageColleagues ? (
         <TeamView
@@ -1069,7 +1069,7 @@ function App() {
       ) : null}
 
       {route === '#/berichte' && canViewReports ? <ReportsView reports={reports} /> : null}
-      {route === '#/owner' && canViewReports ? <FilteredOwnerView shifts={shifts} reports={reports} /> : null}
+      {route === '#/owner' && canViewReports ? <FilteredOwnerView reports={reports} /> : null}
       <input
         ref={photoInputRef}
         type="file"
@@ -2790,7 +2790,7 @@ function ShiftExplorer({ shifts }) {
   );
 }
 
-function FilteredHistoryView({ shifts }) {
+function FilteredHistoryView({ reports }) {
   const [filters, setFilters] = useState({
     search: '',
     status: 'all',
@@ -2800,10 +2800,16 @@ function FilteredHistoryView({ shifts }) {
     to: '',
   });
 
+  const shifts = useMemo(() => reports?.shifts || [], [reports]);
+
   const filteredShifts = useMemo(
     () => shifts.filter((shift) => matchesShiftFilters(shift, filters)),
     [shifts, filters]
   );
+
+  if (!reports) {
+    return <section className="panel"><p className="subtle">Historie wird geladen...</p></section>;
+  }
 
   return (
     <section className="panel">
@@ -2820,7 +2826,7 @@ function FilteredHistoryView({ shifts }) {
   );
 }
 
-function FilteredOwnerView({ shifts, reports }) {
+function FilteredOwnerView({ reports }) {
   const [filters, setFilters] = useState({
     search: '',
     status: 'all',
@@ -2830,10 +2836,16 @@ function FilteredOwnerView({ shifts, reports }) {
     to: '',
   });
 
+  const shifts = useMemo(() => reports?.shifts || [], [reports]);
+
   const filteredShifts = useMemo(
     () => shifts.filter((shift) => matchesShiftFilters(shift, filters)),
     [shifts, filters]
   );
+
+  if (!reports) {
+    return <section className="panel"><p className="subtle">Übersicht wird geladen...</p></section>;
+  }
 
   return (
     <div className="dashboard-grid">
@@ -2848,7 +2860,15 @@ function FilteredOwnerView({ shifts, reports }) {
             <span>Checklisten in aktueller Ansicht</span>
           </article>
           <article>
-            <strong>{reports?.employeeActivity?.length || 0}</strong>
+            <strong>{reports.summary?.completedShifts || 0}</strong>
+            <span>Abgeschlossene Checklisten</span>
+          </article>
+          <article>
+            <strong>{reports.summary?.activeShifts || 0}</strong>
+            <span>Aktive Checklisten</span>
+          </article>
+          <article>
+            <strong>{reports.employeeActivity?.length || 0}</strong>
             <span>Erfasste Kollegen</span>
           </article>
         </div>
